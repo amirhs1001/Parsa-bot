@@ -24,6 +24,9 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
 MARZBAN_URL = "https://panell.goat-hs.online"
 
 MARZBAN_USERNAME = "amirhszz"
