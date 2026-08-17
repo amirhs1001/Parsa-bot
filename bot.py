@@ -4,7 +4,6 @@ import time
 import uuid
 import secrets
 import logging
-import asyncio
 from pathlib import Path
 
 import httpx
@@ -30,10 +29,9 @@ MARZBAN_URL = "https://panell.goat-hs.online"
 MARZBAN_USERNAME = "amirhszz"
 MARZBAN_PASSWORD = "amirhszz"
 
-# فعلاً مالک خودت هستی
+# مالک فعلی ربات
 OWNER_USERNAME = "amirhszz"
 
-# فایل اطلاعات ادمین‌های ربات
 DATA_FILE = Path("bot_data.json")
 
 
@@ -50,33 +48,23 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================
-# BOT
-# =========================================================
-
-dp = Dispatcher()
-
-
-# =========================================================
-# LOCAL DATA
+# DATA
 # =========================================================
 
 def load_data():
 
     if not DATA_FILE.exists():
-
         return {
             "admins": {},
             "created_users": {},
         }
 
     try:
-
         with open(
             DATA_FILE,
             "r",
             encoding="utf-8",
         ) as f:
-
             data = json.load(f)
 
         data.setdefault("admins", {})
@@ -85,7 +73,6 @@ def load_data():
         return data
 
     except Exception:
-
         return {
             "admins": {},
             "created_users": {},
@@ -102,7 +89,6 @@ def save_data():
         "w",
         encoding="utf-8",
     ) as f:
-
         json.dump(
             DATA,
             f,
@@ -112,10 +98,17 @@ def save_data():
 
 
 # =========================================================
+# STATE
+# =========================================================
+
+USER_STATE = {}
+
+
+# =========================================================
 # ACCESS
 # =========================================================
 
-def username_of(user):
+def get_username(user):
 
     if not user:
         return ""
@@ -129,14 +122,14 @@ def username_of(user):
 def is_owner(user):
 
     return (
-        username_of(user)
+        get_username(user)
         == OWNER_USERNAME.lower()
     )
 
 
 def is_admin(user):
 
-    username = username_of(user)
+    username = get_username(user)
 
     if not username:
         return False
@@ -153,7 +146,7 @@ def can_create(user):
 
 
 # =========================================================
-# MAIN KEYBOARD
+# KEYBOARDS
 # =========================================================
 
 def owner_keyboard():
@@ -255,7 +248,7 @@ async def get_marzban_token():
             raise RuntimeError(
                 "ورود به Marzban ناموفق بود:\n"
                 f"{response.status_code}\n"
-                f"{response.text[:500]}"
+                f"{response.text[:1000]}"
             )
 
         result = response.json()
@@ -267,7 +260,7 @@ async def get_marzban_token():
         if not token:
 
             raise RuntimeError(
-                "Marzban access_token برنگرداند."
+                "Marzban توکن ورود را برنگرداند."
             )
 
         return token
@@ -287,9 +280,7 @@ async def marzban_request(
     url = f"{MARZBAN_URL}{endpoint}"
 
     headers = {
-        "Authorization": (
-            f"Bearer {token}"
-        ),
+        "Authorization": f"Bearer {token}",
         "Accept": "application/json",
     }
 
@@ -307,177 +298,6 @@ async def marzban_request(
 
 
 # =========================================================
-# GET INBOUNDS
-# =========================================================
-
-async def get_inbounds(token):
-
-    response = await marzban_request(
-        "GET",
-        "/api/inbounds",
-        token,
-    )
-
-    if response.status_code != 200:
-
-        raise RuntimeError(
-            "دریافت Inboundها ناموفق بود:\n"
-            f"{response.status_code}\n"
-            f"{response.text[:500]}"
-        )
-
-    data = response.json()
-
-    if isinstance(data, list):
-
-        return data
-
-    if isinstance(data, dict):
-
-        return data.get(
-            "inbounds",
-            []
-        )
-
-    return []
-
-
-# =========================================================
-# BUILD PROXIES DYNAMICALLY
-# =========================================================
-
-def build_proxies_and_inbounds(
-    inbounds
-):
-
-    proxies = {}
-    inbound_map = {}
-
-    for inbound in inbounds:
-
-        protocol = (
-            inbound.get("protocol")
-            or ""
-        ).lower()
-
-        tag = inbound.get("tag")
-
-        if not protocol or not tag:
-            continue
-
-        # ---------------------------------------------
-        # VLESS
-        # ---------------------------------------------
-
-        if protocol == "vless":
-
-            if "vless" not in proxies:
-
-                proxies["vless"] = {
-                    "id": str(
-                        uuid.uuid4()
-                    )
-                }
-
-            inbound_map.setdefault(
-                "vless",
-                []
-            ).append(tag)
-
-        # ---------------------------------------------
-        # VMESS
-        # ---------------------------------------------
-
-        elif protocol == "vmess":
-
-            if "vmess" not in proxies:
-
-                proxies["vmess"] = {
-                    "id": str(
-                        uuid.uuid4()
-                    )
-                }
-
-            inbound_map.setdefault(
-                "vmess",
-                []
-            ).append(tag)
-
-        # ---------------------------------------------
-        # TROJAN
-        # ---------------------------------------------
-
-        elif protocol == "trojan":
-
-            if "trojan" not in proxies:
-
-                proxies["trojan"] = {
-                    "password": secrets.token_urlsafe(
-                        18
-                    )
-                }
-
-            inbound_map.setdefault(
-                "trojan",
-                []
-            ).append(tag)
-
-        # ---------------------------------------------
-        # SHADOWSOCKS
-        # ---------------------------------------------
-
-        elif protocol in (
-            "shadowsocks",
-            "shadowsocks2022",
-        ):
-
-            if protocol not in proxies:
-
-                method = (
-                    "chacha20-ietf-poly1305"
-                )
-
-                try:
-
-                    settings = inbound.get(
-                        "settings",
-                        {}
-                    )
-
-                    if isinstance(
-                        settings,
-                        str
-                    ):
-
-                        settings = json.loads(
-                            settings
-                        )
-
-                    method = (
-                        settings
-                        .get("method")
-                        or method
-                    )
-
-                except Exception:
-                    pass
-
-                proxies[protocol] = {
-                    "password": secrets.token_urlsafe(
-                        18
-                    ),
-                    "method": method,
-                }
-
-            inbound_map.setdefault(
-                protocol,
-                []
-            ).append(tag)
-
-    return proxies, inbound_map
-
-
-# =========================================================
 # START
 # =========================================================
 
@@ -488,7 +308,8 @@ async def start(message: Message):
 
         await message.answer(
             "👑 پنل مالک\n\n"
-            "دسترسی کامل ربات برای شما فعال است.",
+            "سلام امیر 👋\n"
+            "دسترسی کامل فعال است.",
             reply_markup=owner_keyboard(),
         )
 
@@ -498,7 +319,7 @@ async def start(message: Message):
 
         await message.answer(
             "👤 پنل ادمین\n\n"
-            "شما می‌توانید کانفیگ بسازید "
+            "شما فقط می‌توانید کانفیگ بسازید "
             "و کانفیگ‌های خودتان را حذف کنید.",
             reply_markup=admin_keyboard(),
         )
@@ -506,12 +327,12 @@ async def start(message: Message):
         return
 
     await message.answer(
-        "⛔️ شما اجازه استفاده از این ربات را ندارید."
+        "⛔️ شما اجازه استفاده از ربات را ندارید."
     )
 
 
 # =========================================================
-# CREATE
+# CREATE MENU
 # =========================================================
 
 @dp.callback_query(F.data == "create")
@@ -532,28 +353,22 @@ async def create_menu(
 
     await callback.answer()
 
-    await callback.message.edit_text(
-        "📦 ساخت کانفیگ\n\n"
-        "حجم را به صورت عدد وارد کن.\n\n"
-        "مثال:\n"
-        "`100`\n\n"
-        "یعنی 100 گیگابایت.",
-        parse_mode="Markdown",
-        reply_markup=back_keyboard(),
-    )
-
     USER_STATE[
         callback.from_user.id
     ] = {
         "step": "volume"
     }
 
-
-# =========================================================
-# USER STATE
-# =========================================================
-
-USER_STATE = {}
+    await callback.message.edit_text(
+        "➕ ساخت کانفیگ\n\n"
+        "پروتکل: `ALL`\n"
+        "سرور: `ALL`\n\n"
+        "📦 حجم را به GB وارد کن.\n\n"
+        "مثال:\n"
+        "`100`",
+        parse_mode="Markdown",
+        reply_markup=back_keyboard(),
+    )
 
 
 # =========================================================
@@ -568,7 +383,6 @@ async def text_handler(
     if not can_create(
         message.from_user
     ):
-
         return
 
     user_id = message.from_user.id
@@ -578,7 +392,6 @@ async def text_handler(
     )
 
     if not state:
-
         return
 
     text = (
@@ -587,17 +400,78 @@ async def text_handler(
     ).strip()
 
     # =====================================================
+    # ADD ADMIN
+    # =====================================================
+
+    if state.get("step") == "add_admin":
+
+        if not is_owner(
+            message.from_user
+        ):
+            return
+
+        username = (
+            text
+            .lstrip("@")
+            .lower()
+        )
+
+        if not username:
+
+            await message.answer(
+                "❌ Username نامعتبر است."
+            )
+
+            return
+
+        if username == OWNER_USERNAME.lower():
+
+            await message.answer(
+                "❌ مالک را نمی‌توان ادمین کرد."
+            )
+
+            return
+
+        DATA["admins"][username] = {
+            "created_at": int(
+                time.time()
+            )
+        }
+
+        DATA["created_users"].setdefault(
+            username,
+            []
+        )
+
+        save_data()
+
+        USER_STATE.pop(
+            user_id,
+            None
+        )
+
+        await message.answer(
+            "✅ ادمین اضافه شد.\n\n"
+            f"👤 @{username}\n\n"
+            "دسترسی‌ها:\n"
+            "• ساخت کانفیگ\n"
+            "• حذف کانفیگ‌های خودش",
+            reply_markup=owner_keyboard(),
+        )
+
+        return
+
+    # =====================================================
     # VOLUME
     # =====================================================
 
-    if state["step"] == "volume":
+    if state.get("step") == "volume":
 
         try:
 
             volume = int(text)
 
             if volume < 0:
-
                 raise ValueError
 
         except ValueError:
@@ -611,14 +485,15 @@ async def text_handler(
 
             return
 
-        state["volume"] = volume
-        state["step"] = "days"
+        USER_STATE[user_id] = {
+            "step": "days",
+            "volume": volume,
+        }
 
         await message.answer(
             "⏳ حالا مدت اعتبار را به روز وارد کن.\n\n"
             "مثال:\n"
-            "`30`\n\n"
-            "یعنی 30 روز.",
+            "`30`",
             parse_mode="Markdown",
         )
 
@@ -628,21 +503,19 @@ async def text_handler(
     # DAYS
     # =====================================================
 
-    if state["step"] == "days":
+    if state.get("step") == "days":
 
         try:
 
             days = int(text)
 
             if days <= 0:
-
                 raise ValueError
 
         except ValueError:
 
             await message.answer(
-                "❌ تعداد روز باید یک عدد "
-                "بزرگ‌تر از صفر باشد.\n\n"
+                "❌ تعداد روز باید بیشتر از صفر باشد.\n\n"
                 "مثال:\n"
                 "`30`",
                 parse_mode="Markdown",
@@ -652,9 +525,12 @@ async def text_handler(
 
         volume = state["volume"]
 
-        del USER_STATE[user_id]
+        USER_STATE.pop(
+            user_id,
+            None
+        )
 
-        await create_mrzban_user(
+        await create_user(
             message,
             volume,
             days,
@@ -662,10 +538,10 @@ async def text_handler(
 
 
 # =========================================================
-# CREATE MARZBAN USER
+# CREATE USER
 # =========================================================
 
-async def create_mrzban_user(
+async def create_user(
     message: Message,
     volume: int,
     days: int,
@@ -673,65 +549,54 @@ async def create_mrzban_user(
 
     await message.answer(
         "⏳ در حال ساخت کانفیگ...\n\n"
-        "در حال دریافت Inboundهای فعلی Marzban..."
+        "لطفاً صبر کن."
     )
 
     try:
 
         token = await get_marzban_token()
 
-        # ---------------------------------------------
-        # دریافت همه Inboundهای فعلی
-        # ---------------------------------------------
+        # =================================================
+        # PROTOCOL = ALL
+        #
+        # Marzban برای User حداقل یک Proxy معتبر
+        # می‌خواهد. بنابراین VLESS را به عنوان Proxy
+        # پایه می‌فرستیم.
+        #
+        # Inboundها در کد هاردکد نشده‌اند.
+        # =================================================
 
-        inbounds = await get_inbounds(
-            token
+        proxy_id = str(
+            uuid.uuid4()
         )
 
-        if not inbounds:
+        proxies = {
+            "vless": {
+                "id": proxy_id
+            }
+        }
 
-            raise RuntimeError(
-                "هیچ Inbound فعالی در Marzban پیدا نشد."
-            )
-
-        # ---------------------------------------------
-        # ساخت Proxyهای لازم
-        # ---------------------------------------------
-
-        proxies, inbound_map = (
-            build_proxies_and_inbounds(
-                inbounds
-            )
-        )
-
-        if not proxies:
-
-            raise RuntimeError(
-                "هیچ پروتکل قابل پشتیبانی "
-                "در Inboundهای Marzban پیدا نشد."
-            )
-
-        # ---------------------------------------------
-        # Username
-        # ---------------------------------------------
+        # =================================================
+        # USERNAME
+        # =================================================
 
         username = (
             "u_"
             + secrets.token_hex(4)
         )
 
-        # ---------------------------------------------
-        # Expire
-        # ---------------------------------------------
+        # =================================================
+        # EXPIRE
+        # =================================================
 
         expire = int(
             time.time()
-            + days * 24 * 60 * 60
+            + days * 86400
         )
 
-        # ---------------------------------------------
-        # Data Limit
-        # ---------------------------------------------
+        # =================================================
+        # DATA LIMIT
+        # =================================================
 
         if volume == 0:
 
@@ -746,23 +611,19 @@ async def create_mrzban_user(
                 * 1024
             )
 
-        # ---------------------------------------------
-        # Payload
-        # ---------------------------------------------
+        # =================================================
+        # PAYLOAD
+        # =================================================
 
         payload = {
             "username": username,
             "proxies": proxies,
-            "inbounds": inbound_map,
+            "inbounds": {},
             "expire": expire,
             "data_limit": data_limit,
             "data_limit_reset_strategy": "no_reset",
             "status": "active",
         }
-
-        # ---------------------------------------------
-        # CREATE
-        # ---------------------------------------------
 
         response = await marzban_request(
             "POST",
@@ -777,22 +638,22 @@ async def create_mrzban_user(
         ):
 
             raise RuntimeError(
-                "Create user failed: "
+                "Marzban User creation failed:\n"
                 f"{response.status_code}\n"
-                f"{response.text[:1500]}"
+                f"{response.text[:2000]}"
             )
 
-        user = response.json()
+        result = response.json()
 
-        # ---------------------------------------------
-        # Subscription
-        # ---------------------------------------------
+        # =================================================
+        # SUBSCRIPTION
+        # =================================================
 
         subscription_url = (
-            user.get(
+            result.get(
                 "subscription_url"
             )
-            or user.get(
+            or result.get(
                 "subscription"
             )
             or ""
@@ -805,14 +666,12 @@ async def create_mrzban_user(
                 f"/sub/{username}"
             )
 
-        # ---------------------------------------------
-        # Save ownership
-        # ---------------------------------------------
+        # =================================================
+        # SAVE OWNER
+        # =================================================
 
-        creator = (
-            username_of(
-                message.from_user
-            )
+        creator = get_username(
+            message.from_user
         )
 
         DATA[
@@ -830,26 +689,25 @@ async def create_mrzban_user(
 
         save_data()
 
-        # ---------------------------------------------
-        # Result
-        # ---------------------------------------------
+        # =================================================
+        # RESULT
+        # =================================================
 
-        protocols = ", ".join(
-            proxies.keys()
+        volume_text = (
+            "♾ نامحدود"
+            if volume == 0
+            else f"{volume} GB"
         )
 
         await message.answer(
-            "✅ کانفیگ با موفقیت ساخته شد!\n\n"
+            "✅ کانفیگ ساخته شد!\n\n"
             f"👤 Username:\n"
             f"`{username}`\n\n"
-            f"📦 حجم: "
-            f"{'نامحدود' if volume == 0 else str(volume) + ' GB'}\n"
+            f"🔌 Protocol: `ALL`\n"
+            f"🌐 Servers: `ALL`\n"
+            f"📦 حجم: {volume_text}\n"
             f"⏳ اعتبار: {days} روز\n\n"
-            f"🔌 پروتکل‌ها:\n"
-            f"`{protocols}`\n\n"
-            "🌐 همه Inboundهای فعلی به این کاربر "
-            "متصل شدند.\n\n"
-            "🔗 Subscription:\n"
+            "🔗 لینک Subscription:\n"
             f"`{subscription_url}`",
             parse_mode="Markdown",
         )
@@ -869,7 +727,7 @@ async def create_mrzban_user(
 
 
 # =========================================================
-# ADMIN MANAGEMENT
+# ADMINS MENU
 # =========================================================
 
 @dp.callback_query(
@@ -884,7 +742,7 @@ async def admins_menu(
     ):
 
         await callback.answer(
-            "⛔️ فقط مالک دسترسی دارد.",
+            "⛔️ فقط مالک.",
             show_alert=True,
         )
 
@@ -922,8 +780,7 @@ async def admins_menu(
     )
 
     await callback.message.edit_text(
-        "👤 مدیریت ادمین‌ها\n\n"
-        "مالک می‌تواند ادمین‌ها را اضافه یا حذف کند.",
+        "👤 مدیریت ادمین‌ها",
         reply_markup=keyboard,
     )
 
@@ -942,12 +799,6 @@ async def add_admin(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -960,7 +811,7 @@ async def add_admin(
 
     await callback.message.edit_text(
         "➕ افزودن ادمین\n\n"
-        "Username تلگرام ادمین را وارد کن.\n\n"
+        "Username تلگرام را وارد کن.\n\n"
         "مثال:\n"
         "`username`",
         parse_mode="Markdown",
@@ -982,12 +833,6 @@ async def remove_admin(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -995,7 +840,7 @@ async def remove_admin(
     if not DATA["admins"]:
 
         await callback.message.edit_text(
-            "👤 هیچ ادمینی وجود ندارد.",
+            "👤 هیچ ادمینی ثبت نشده.",
             reply_markup=back_keyboard(),
         )
 
@@ -1003,9 +848,7 @@ async def remove_admin(
 
     buttons = []
 
-    for username in DATA[
-        "admins"
-    ]:
+    for username in DATA["admins"]:
 
         buttons.append(
             [
@@ -1028,7 +871,7 @@ async def remove_admin(
     )
 
     await callback.message.edit_text(
-        "🗑 انتخاب ادمین برای حذف:",
+        "🗑 ادمینی که می‌خواهی حذف شود انتخاب کن:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=buttons
         ),
@@ -1051,12 +894,6 @@ async def delete_admin(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     username = (
@@ -1065,9 +902,7 @@ async def delete_admin(
         .lower()
     )
 
-    DATA[
-        "admins"
-    ].pop(
+    DATA["admins"].pop(
         username,
         None
     )
@@ -1075,7 +910,7 @@ async def delete_admin(
     save_data()
 
     await callback.answer(
-        "ادمین حذف شد."
+        "✅ ادمین حذف شد."
     )
 
     await admins_menu(
@@ -1097,105 +932,31 @@ async def list_admins(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
 
     text = (
-        "👤 لیست دسترسی‌ها\n\n"
-        f"👑 مالک:\n"
+        "👑 مالک:\n"
         f"@{OWNER_USERNAME}\n\n"
+        "👤 ادمین‌ها:\n\n"
     )
 
-    if DATA["admins"]:
+    if not DATA["admins"]:
 
-        text += "👤 ادمین‌ها:\n\n"
+        text += "هیچ ادمینی وجود ندارد."
 
-        for username in DATA[
-            "admins"
-        ]:
+    else:
+
+        for username in DATA["admins"]:
 
             text += (
                 f"• @{username}\n"
             )
 
-    else:
-
-        text += (
-            "👤 ادمینی اضافه نشده است."
-        )
-
     await callback.message.edit_text(
         text,
         reply_markup=back_keyboard(),
-    )
-
-
-# =========================================================
-# ADMIN ADD INPUT
-# =========================================================
-
-async def process_add_admin(
-    message: Message
-):
-
-    username = (
-        message.text
-        or ""
-    ).strip().lstrip("@").lower()
-
-    if not username:
-
-        await message.answer(
-            "❌ Username معتبر نیست."
-        )
-
-        return
-
-    if username == OWNER_USERNAME.lower():
-
-        await message.answer(
-            "❌ مالک را نمی‌توان به عنوان ادمین اضافه کرد."
-        )
-
-        return
-
-    DATA[
-        "admins"
-    ][username] = {
-        "created_at": int(
-            time.time()
-        )
-    }
-
-    DATA[
-        "created_users"
-    ].setdefault(
-        username,
-        []
-    )
-
-    save_data()
-
-    USER_STATE.pop(
-        message.from_user.id,
-        None
-    )
-
-    await message.answer(
-        "✅ ادمین اضافه شد.\n\n"
-        f"👤 @{username}\n\n"
-        "دسترسی ادمین:\n"
-        "• ساخت کانفیگ\n"
-        "• حذف کانفیگ‌های خودش\n"
-        "• مشاهده کانفیگ‌های خودش",
-        reply_markup=owner_keyboard(),
     )
 
 
@@ -1213,15 +974,11 @@ async def my_users(
     if not is_admin(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ دسترسی ندارید.",
-            show_alert=True,
-        )
-
         return
 
-    username = username_of(
+    await callback.answer()
+
+    username = get_username(
         callback.from_user
     )
 
@@ -1232,13 +989,11 @@ async def my_users(
         []
     )
 
-    await callback.answer()
-
     if not users:
 
         await callback.message.edit_text(
             "🗑 کانفیگ‌های من\n\n"
-            "شما هنوز کانفیگی نساخته‌اید.",
+            "هنوز کانفیگی نساخته‌ای.",
             reply_markup=back_keyboard(),
         )
 
@@ -1270,7 +1025,7 @@ async def my_users(
 
     await callback.message.edit_text(
         "🗑 کانفیگ‌های من\n\n"
-        "برای حذف، روی کانفیگ موردنظر بزن:",
+        "برای حذف روی کانفیگ بزن:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=buttons
         ),
@@ -1278,7 +1033,7 @@ async def my_users(
 
 
 # =========================================================
-# DELETE OWN USER
+# DELETE USER
 # =========================================================
 
 @dp.callback_query(
@@ -1286,38 +1041,32 @@ async def my_users(
         "delete_user:"
     )
 )
-async def delete_own_user(
+async def delete_user(
     callback: CallbackQuery
 ):
 
     if not is_admin(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ دسترسی ندارید.",
-            show_alert=True,
-        )
-
         return
 
-    target = (
+    username = (
         callback.data
         .split(":", 1)[1]
     )
 
-    owner_username = username_of(
+    creator = get_username(
         callback.from_user
     )
 
     owned = DATA[
         "created_users"
     ].get(
-        owner_username,
+        creator,
         []
     )
 
-    if target not in owned:
+    if username not in owned:
 
         await callback.answer(
             "⛔️ این کانفیگ متعلق به شما نیست.",
@@ -1334,7 +1083,7 @@ async def delete_own_user(
 
         response = await marzban_request(
             "DELETE",
-            f"/api/user/{target}",
+            f"/api/user/{username}",
             token,
         )
 
@@ -1345,18 +1094,18 @@ async def delete_own_user(
 
             raise RuntimeError(
                 f"{response.status_code}\n"
-                f"{response.text[:500]}"
+                f"{response.text[:1000]}"
             )
 
         owned.remove(
-            target
+            username
         )
 
         save_data()
 
         await callback.message.edit_text(
             "✅ کانفیگ حذف شد.\n\n"
-            f"👤 `{target}`",
+            f"`{username}`",
             parse_mode="Markdown",
             reply_markup=back_keyboard(),
         )
@@ -1364,14 +1113,14 @@ async def delete_own_user(
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ حذف کانفیگ ناموفق بود.\n\n"
+            "❌ حذف انجام نشد.\n\n"
             f"`{str(error)[:1000]}`",
             parse_mode="Markdown",
         )
 
 
 # =========================================================
-# USERS - OWNER
+# OWNER USERS
 # =========================================================
 
 @dp.callback_query(
@@ -1384,12 +1133,6 @@ async def users(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -1407,7 +1150,7 @@ async def users(
         if response.status_code != 200:
 
             raise RuntimeError(
-                f"{response.status_code}"
+                response.text[:500]
             )
 
         data = response.json()
@@ -1433,12 +1176,12 @@ async def users(
 
             text = (
                 "👥 کاربران\n\n"
-                f"📊 تعداد: {total}\n\n"
+                f"تعداد: {total}\n\n"
             )
 
             for user in users_list[:30]:
 
-                username = user.get(
+                name = user.get(
                     "username",
                     "-"
                 )
@@ -1449,14 +1192,8 @@ async def users(
                 )
 
                 text += (
-                    f"• `{username}` — "
+                    f"• `{name}` — "
                     f"{status}\n"
-                )
-
-            if total > 30:
-
-                text += (
-                    "\n... کاربران بیشتر"
                 )
 
         await callback.message.edit_text(
@@ -1468,7 +1205,7 @@ async def users(
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ دریافت کاربران ناموفق بود.\n\n"
+            "❌ خطا در دریافت کاربران.\n\n"
             f"`{str(error)[:1000]}`",
             parse_mode="Markdown",
         )
@@ -1488,12 +1225,6 @@ async def stats(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -1511,7 +1242,7 @@ async def stats(
         if response.status_code != 200:
 
             raise RuntimeError(
-                f"{response.status_code}"
+                response.text[:500]
             )
 
         data = response.json()
@@ -1535,19 +1266,18 @@ async def stats(
         )
 
         await callback.message.edit_text(
-            "📊 آمار پنل\n\n"
+            "📊 آمار\n\n"
             f"👥 کل کاربران: {total}\n"
             f"🟢 فعال: {active}\n"
-            f"🔴 غیرفعال: {total - active}\n\n"
-            f"👤 ادمین‌های ربات: "
-            f"{len(DATA['admins'])}",
+            f"🔴 غیرفعال: {total - active}\n"
+            f"👤 ادمین‌ها: {len(DATA['admins'])}",
             reply_markup=back_keyboard(),
         )
 
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ دریافت آمار ناموفق بود.\n\n"
+            "❌ خطا در دریافت آمار.\n\n"
             f"`{str(error)[:1000]}`",
             parse_mode="Markdown",
         )
@@ -1567,12 +1297,6 @@ async def back(
     if not is_admin(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ دسترسی ندارید.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -1582,75 +1306,16 @@ async def back(
     ):
 
         await callback.message.edit_text(
-            "👑 پنل مالک\n\n"
-            "دسترسی کامل فعال است.",
+            "👑 پنل مالک",
             reply_markup=owner_keyboard(),
         )
 
     else:
 
         await callback.message.edit_text(
-            "👤 پنل ادمین\n\n"
-            "می‌توانید کانفیگ بسازید "
-            "و کانفیگ‌های خودتان را حذف کنید.",
+            "👤 پنل ادمین",
             reply_markup=admin_keyboard(),
         )
-
-
-# =========================================================
-# SPECIAL TEXT ROUTER
-# =========================================================
-
-_original_text_handler = text_handler
-
-
-@dp.message(F.text)
-async def admin_and_state_router(
-    message: Message
-):
-
-    if not is_admin(
-        message.from_user
-    ):
-
-        return
-
-    user_id = message.from_user.id
-
-    state = USER_STATE.get(
-        user_id
-    )
-
-    if state:
-
-        if state.get(
-            "step"
-        ) == "add_admin":
-
-            if not is_owner(
-                message.from_user
-            ):
-
-                return
-
-            await process_add_admin(
-                message
-            )
-
-            return
-
-        if state.get(
-            "step"
-        ) in (
-            "volume",
-            "days",
-        ):
-
-            await _original_text_handler(
-                message
-            )
-
-            return
 
 
 # =========================================================
@@ -1667,7 +1332,7 @@ async def main():
         )
 
     logger.info(
-        "Starting bot..."
+        "Bot starting..."
     )
 
     logger.info(
@@ -1693,5 +1358,7 @@ async def main():
 
 
 if __name__ == "__main__":
+
+    import asyncio
 
     asyncio.run(main())
