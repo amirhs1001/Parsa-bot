@@ -1,6 +1,9 @@
 import os
 import asyncio
 import logging
+import secrets
+import time
+
 import httpx
 
 from aiogram import Bot, Dispatcher, F
@@ -12,11 +15,12 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
+
 # =========================================================
 # CONFIG
 # =========================================================
 
-BOT_TOKEN = os.getenv("8619194656:AAElQAwRjdodLopUTcPyFSZJaIbxI-9ALYg")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 
 MARZBAN_URL = "https://panell.goat-hs.online"
 
@@ -25,37 +29,169 @@ MARZBAN_PASSWORD = "amirhszz"
 
 OWNER_USERNAME = "parsa9599"
 
+
+# =========================================================
+# LOGGING
+# =========================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+
 # =========================================================
 # BOT
 # =========================================================
 
 dp = Dispatcher()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-
 
 # =========================================================
-# AUTH
+# OWNER CHECK
 # =========================================================
 
 def is_owner(user) -> bool:
-    if not user or not user.username:
+    if user is None:
         return False
 
-    return user.username.lower() == OWNER_USERNAME.lower()
+    username = getattr(user, "username", None)
+
+    if not username:
+        return False
+
+    return username.lower() == OWNER_USERNAME.lower()
 
 
 # =========================================================
-# MARZBAN API
+# MAIN KEYBOARD
+# =========================================================
+
+def main_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="➕ ساخت کاربر",
+                    callback_data="create_user",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="👥 کاربران",
+                    callback_data="users",
+                ),
+                InlineKeyboardButton(
+                    text="📊 آمار",
+                    callback_data="stats",
+                ),
+            ],
+        ]
+    )
+
+
+# =========================================================
+# VOLUME KEYBOARD
+# =========================================================
+
+def volume_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="10 GB",
+                    callback_data="volume:10",
+                ),
+                InlineKeyboardButton(
+                    text="20 GB",
+                    callback_data="volume:20",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="30 GB",
+                    callback_data="volume:30",
+                ),
+                InlineKeyboardButton(
+                    text="50 GB",
+                    callback_data="volume:50",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="100 GB",
+                    callback_data="volume:100",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="♾ نامحدود",
+                    callback_data="volume:0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت",
+                    callback_data="back",
+                )
+            ],
+        ]
+    )
+
+
+# =========================================================
+# DAYS KEYBOARD
+# =========================================================
+
+def days_keyboard(volume):
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="7 روز",
+                    callback_data=f"days:{volume}:7",
+                ),
+                InlineKeyboardButton(
+                    text="15 روز",
+                    callback_data=f"days:{volume}:15",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="30 روز",
+                    callback_data=f"days:{volume}:30",
+                ),
+                InlineKeyboardButton(
+                    text="60 روز",
+                    callback_data=f"days:{volume}:60",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="90 روز",
+                    callback_data=f"days:{volume}:90",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔙 بازگشت",
+                    callback_data="create_user",
+                )
+            ],
+        ]
+    )
+
+
+# =========================================================
+# MARZBAN TOKEN
 # =========================================================
 
 async def get_marzban_token():
-    """
-    گرفتن Access Token از Marzban
-    """
 
     url = f"{MARZBAN_URL}/api/admin/token"
 
@@ -68,162 +204,68 @@ async def get_marzban_token():
         "client_secret": "",
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(
+        timeout=30,
+        follow_redirects=True,
+    ) as client:
 
         response = await client.post(
             url,
-            data=data
+            data=data,
         )
 
-        response.raise_for_status()
+        if response.status_code != 200:
+
+            raise RuntimeError(
+                f"Marzban login failed: "
+                f"{response.status_code} "
+                f"{response.text[:500]}"
+            )
 
         result = response.json()
 
-        return result["access_token"]
+        token = result.get("access_token")
 
+        if not token:
+
+            raise RuntimeError(
+                "Marzban did not return access_token."
+            )
+
+        return token
+
+
+# =========================================================
+# MARZBAN REQUEST
+# =========================================================
 
 async def marzban_request(
-    method: str,
-    endpoint: str,
-    token: str,
-    **kwargs
+    method,
+    endpoint,
+    token,
+    **kwargs,
 ):
-    """
-    درخواست عمومی به API مرزبان
-    """
 
     url = f"{MARZBAN_URL}{endpoint}"
 
     headers = {
-        "Authorization": f"Bearer {token}"
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(
+        timeout=30,
+        follow_redirects=True,
+    ) as client:
 
         response = await client.request(
             method,
             url,
             headers=headers,
-            **kwargs
+            **kwargs,
         )
 
         return response
-
-
-# =========================================================
-# KEYBOARDS
-# =========================================================
-
-def main_keyboard():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➕ ساخت کاربر",
-                    callback_data="create_user"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 کاربران",
-                    callback_data="users"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📊 آمار",
-                    callback_data="stats"
-                )
-            ],
-        ]
-    )
-
-
-def volume_keyboard():
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="10 GB",
-                    callback_data="volume:10"
-                ),
-                InlineKeyboardButton(
-                    text="20 GB",
-                    callback_data="volume:20"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="30 GB",
-                    callback_data="volume:30"
-                ),
-                InlineKeyboardButton(
-                    text="50 GB",
-                    callback_data="volume:50"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="100 GB",
-                    callback_data="volume:100"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="♾ نامحدود",
-                    callback_data="volume:0"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت",
-                    callback_data="back"
-                )
-            ]
-        ]
-    )
-
-
-def days_keyboard(volume):
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="7 روز",
-                    callback_data=f"days:{volume}:7"
-                ),
-                InlineKeyboardButton(
-                    text="15 روز",
-                    callback_data=f"days:{volume}:15"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="30 روز",
-                    callback_data=f"days:{volume}:30"
-                ),
-                InlineKeyboardButton(
-                    text="60 روز",
-                    callback_data=f"days:{volume}:60"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="90 روز",
-                    callback_data=f"days:{volume}:90"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔙 بازگشت",
-                    callback_data="create_user"
-                )
-            ]
-        ]
-    )
 
 
 # =========================================================
@@ -236,16 +278,16 @@ async def start(message: Message):
     if not is_owner(message.from_user):
 
         await message.answer(
-            "⛔️ شما اجازه استفاده از این ربات را ندارید."
+            "⛔️ دسترسی ندارید."
         )
 
         return
 
     await message.answer(
         "👑 پنل مدیریت\n\n"
-        "به ربات مدیریت Marzban خوش آمدید.\n\n"
-        "از منوی زیر استفاده کنید:",
-        reply_markup=main_keyboard()
+        "سلام! به ربات مدیریت Marzban خوش آمدی.\n\n"
+        "از منوی زیر انتخاب کن:",
+        reply_markup=main_keyboard(),
     )
 
 
@@ -259,8 +301,8 @@ async def create_user(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -269,13 +311,13 @@ async def create_user(callback: CallbackQuery):
 
     await callback.message.edit_text(
         "📦 انتخاب حجم\n\n"
-        "حجم کاربر را انتخاب کنید:",
-        reply_markup=volume_keyboard()
+        "حجم موردنظر را انتخاب کن:",
+        reply_markup=volume_keyboard(),
     )
 
 
 # =========================================================
-# VOLUME
+# SELECT VOLUME
 # =========================================================
 
 @dp.callback_query(F.data.startswith("volume:"))
@@ -284,8 +326,8 @@ async def select_volume(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -297,22 +339,19 @@ async def select_volume(callback: CallbackQuery):
     )
 
     if volume == 0:
-
-        text = "♾ حجم نامحدود"
-
+        volume_text = "♾ نامحدود"
     else:
-
-        text = f"📦 حجم: {volume} GB"
+        volume_text = f"{volume} GB"
 
     await callback.message.edit_text(
-        f"{text}\n\n"
-        "⏳ حالا مدت اعتبار را انتخاب کن:",
-        reply_markup=days_keyboard(volume)
+        f"📦 حجم انتخابی: {volume_text}\n\n"
+        "⏳ مدت اعتبار را انتخاب کن:",
+        reply_markup=days_keyboard(volume),
     )
 
 
 # =========================================================
-# DAYS
+# SELECT DAYS + CREATE USER
 # =========================================================
 
 @dp.callback_query(F.data.startswith("days:"))
@@ -321,8 +360,8 @@ async def select_days(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -336,66 +375,38 @@ async def select_days(callback: CallbackQuery):
 
     await callback.message.edit_text(
         "⏳ در حال ساخت کاربر...\n\n"
-        "لطفاً چند ثانیه صبر کن."
+        "لطفاً چند ثانیه صبر کن.",
     )
 
     try:
 
+        # -------------------------------------------------
+        # LOGIN
+        # -------------------------------------------------
+
         token = await get_marzban_token()
 
         # -------------------------------------------------
-        # گرفتن Inbounds
+        # GET INBOUNDS
         # -------------------------------------------------
 
         response = await marzban_request(
             "GET",
             "/api/inbounds",
-            token
+            token,
         )
 
         if response.status_code != 200:
 
-            await callback.message.edit_text(
-                "❌ خطا در دریافت Inboundهای Marzban\n\n"
-                f"HTTP {response.status_code}"
+            raise RuntimeError(
+                f"Could not get inbounds: "
+                f"{response.status_code}"
             )
-
-            return
 
         inbounds_data = response.json()
 
         # -------------------------------------------------
-        # ساخت username
-        # -------------------------------------------------
-
-        import secrets
-
-        username = "user_" + secrets.token_hex(4)
-
-        # -------------------------------------------------
-        # expire timestamp
-        # -------------------------------------------------
-
-        import time
-
-        expire = int(
-            time.time() + (days * 24 * 60 * 60)
-        )
-
-        # -------------------------------------------------
-        # data limit
-        # -------------------------------------------------
-
-        if volume == 0:
-
-            data_limit = None
-
-        else:
-
-            data_limit = volume * 1024 * 1024 * 1024
-
-        # -------------------------------------------------
-        # Inbound mapping
+        # BUILD INBOUND MAP
         # -------------------------------------------------
 
         inbound_map = {}
@@ -407,24 +418,59 @@ async def select_days(callback: CallbackQuery):
                 tag = inbound.get("tag")
 
                 if tag:
-
                     inbound_map[tag] = []
 
         elif isinstance(inbounds_data, dict):
 
-            for inbound in inbounds_data.get(
+            inbounds = inbounds_data.get(
                 "inbounds",
-                []
-            ):
+                [],
+            )
+
+            for inbound in inbounds:
 
                 tag = inbound.get("tag")
 
                 if tag:
-
                     inbound_map[tag] = []
 
         # -------------------------------------------------
-        # User payload
+        # USERNAME
+        # -------------------------------------------------
+
+        username = (
+            "u_"
+            + secrets.token_hex(4)
+        )
+
+        # -------------------------------------------------
+        # EXPIRATION
+        # -------------------------------------------------
+
+        expire = int(
+            time.time()
+            + (days * 24 * 60 * 60)
+        )
+
+        # -------------------------------------------------
+        # DATA LIMIT
+        # -------------------------------------------------
+
+        if volume == 0:
+
+            data_limit = None
+
+        else:
+
+            data_limit = (
+                volume
+                * 1024
+                * 1024
+                * 1024
+            )
+
+        # -------------------------------------------------
+        # USER PAYLOAD
         # -------------------------------------------------
 
         payload = {
@@ -438,40 +484,39 @@ async def select_days(callback: CallbackQuery):
         }
 
         # -------------------------------------------------
-        # Create user
+        # CREATE USER
         # -------------------------------------------------
 
         response = await marzban_request(
             "POST",
             "/api/user",
             token,
-            json=payload
+            json=payload,
         )
 
-        if response.status_code not in (200, 201):
+        if response.status_code not in (
+            200,
+            201,
+        ):
 
-            await callback.message.edit_text(
-                "❌ ساخت کاربر ناموفق بود.\n\n"
-                f"HTTP: {response.status_code}\n\n"
+            raise RuntimeError(
+                f"Create user failed: "
+                f"{response.status_code}\n"
                 f"{response.text[:1000]}"
             )
-
-            return
 
         user = response.json()
 
         # -------------------------------------------------
-        # Subscription
+        # SUBSCRIPTION URL
         # -------------------------------------------------
 
         subscription_url = (
             user.get("subscription_url")
             or user.get("subscription")
+            or user.get("sub_url")
             or ""
         )
-
-        # بعضی نسخه‌های Marzban
-        # لینک را با username برمی‌گردانند.
 
         if not subscription_url:
 
@@ -480,7 +525,7 @@ async def select_days(callback: CallbackQuery):
             )
 
         # -------------------------------------------------
-        # Result
+        # DISPLAY
         # -------------------------------------------------
 
         if volume == 0:
@@ -491,37 +536,40 @@ async def select_days(callback: CallbackQuery):
 
             volume_text = f"{volume} GB"
 
-        await callback.message.edit_text(
-            "✅ کاربر با موفقیت ساخته شد!\n\n"
-            f"👤 Username:\n"
-            f"`{username}`\n\n"
-            f"📦 حجم: {volume_text}\n"
-            f"⏳ مدت: {days} روز\n\n"
-            f"🔗 لینک اشتراک:\n"
-            f"`{subscription_url}`",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="🔙 منوی اصلی",
-                            callback_data="back"
-                        )
-                    ]
+        result_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 منوی اصلی",
+                        callback_data="back",
+                    )
                 ]
-            )
+            ]
         )
 
-    except Exception as e:
+        await callback.message.edit_text(
+            "✅ کاربر ساخته شد!\n\n"
+            f"👤 نام کاربری:\n"
+            f"`{username}`\n\n"
+            f"📦 حجم: {volume_text}\n"
+            f"⏳ اعتبار: {days} روز\n\n"
+            "🔗 لینک اشتراک:\n"
+            f"`{subscription_url}`",
+            parse_mode="Markdown",
+            reply_markup=result_keyboard,
+        )
 
-        logging.exception(
+    except Exception as error:
+
+        logger.exception(
             "Create user error"
         )
 
         await callback.message.edit_text(
-            "❌ خطایی هنگام اتصال به Marzban رخ داد.\n\n"
-            f"`{str(e)[:1000]}`",
-            parse_mode="Markdown"
+            "❌ ساخت کاربر انجام نشد.\n\n"
+            "خطا:\n"
+            f"`{str(error)[:1500]}`",
+            parse_mode="Markdown",
         )
 
 
@@ -535,8 +583,8 @@ async def users(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -550,61 +598,59 @@ async def users(callback: CallbackQuery):
         response = await marzban_request(
             "GET",
             "/api/users",
-            token
+            token,
         )
 
         if response.status_code != 200:
 
-            await callback.message.edit_text(
-                "❌ دریافت کاربران ناموفق بود.\n\n"
-                f"HTTP {response.status_code}"
+            raise RuntimeError(
+                f"Get users failed: "
+                f"{response.status_code}"
             )
-
-            return
 
         data = response.json()
 
         users_list = data.get(
             "users",
-            []
+            [],
         )
 
         total = data.get(
             "total",
-            len(users_list)
+            len(users_list),
         )
 
         if not users_list:
 
             text = (
                 "👥 کاربران\n\n"
-                "هیچ کاربری پیدا نشد."
+                "هیچ کاربری وجود ندارد."
             )
 
         else:
 
             text = (
-                f"👥 کاربران\n\n"
+                "👥 کاربران\n\n"
                 f"📊 تعداد: {total}\n\n"
             )
 
-            for user in users_list[:20]:
+            for user in users_list[:30]:
 
                 username = user.get(
                     "username",
-                    "-"
+                    "-",
                 )
 
                 status = user.get(
                     "status",
-                    "-"
+                    "-",
                 )
 
                 text += (
                     f"• `{username}` — {status}\n"
                 )
 
-            if total > 20:
+            if total > 30:
 
                 text += (
                     "\n... و کاربران بیشتر"
@@ -618,23 +664,23 @@ async def users(callback: CallbackQuery):
                     [
                         InlineKeyboardButton(
                             text="🔙 بازگشت",
-                            callback_data="back"
+                            callback_data="back",
                         )
                     ]
                 ]
-            )
+            ),
         )
 
-    except Exception as e:
+    except Exception as error:
 
-        logging.exception(
+        logger.exception(
             "Users error"
         )
 
         await callback.message.edit_text(
-            "❌ خطا در دریافت کاربران.\n\n"
-            f"`{str(e)[:500]}`",
-            parse_mode="Markdown"
+            "❌ دریافت کاربران ناموفق بود.\n\n"
+            f"`{str(error)[:1000]}`",
+            parse_mode="Markdown",
         )
 
 
@@ -648,8 +694,8 @@ async def stats(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -663,62 +709,63 @@ async def stats(callback: CallbackQuery):
         response = await marzban_request(
             "GET",
             "/api/users",
-            token
+            token,
         )
 
         if response.status_code != 200:
 
-            await callback.message.edit_text(
-                "❌ دریافت آمار ناموفق بود."
+            raise RuntimeError(
+                f"Get stats failed: "
+                f"{response.status_code}"
             )
-
-            return
 
         data = response.json()
 
-        total = data.get(
-            "total",
-            len(data.get("users", []))
-        )
-
         users_list = data.get(
             "users",
-            []
+            [],
         )
 
-        active = 0
+        total = data.get(
+            "total",
+            len(users_list),
+        )
 
-        for user in users_list:
+        active = sum(
+            1
+            for user in users_list
+            if user.get("status") == "active"
+        )
 
-            if user.get("status") == "active":
-
-                active += 1
+        inactive = total - active
 
         await callback.message.edit_text(
-            "📊 آمار Marzban\n\n"
+            "📊 آمار پنل\n\n"
             f"👥 کل کاربران: {total}\n"
-            f"🟢 کاربران فعال: {active}\n"
-            f"🔴 غیرفعال: {total - active}",
+            f"🟢 فعال: {active}\n"
+            f"🔴 غیرفعال: {inactive}",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
                             text="🔙 بازگشت",
-                            callback_data="back"
+                            callback_data="back",
                         )
                     ]
                 ]
-            )
+            ),
         )
 
-    except Exception as e:
+    except Exception as error:
 
-        logging.exception(
+        logger.exception(
             "Stats error"
         )
 
         await callback.message.edit_text(
-            "❌ خطا در دریافت آمار."
+            "❌ دریافت آمار ناموفق بود.\n\n"
+            f"`{str(error)[:1000]}`",
+            parse_mode="Markdown",
         )
 
 
@@ -732,8 +779,8 @@ async def back(callback: CallbackQuery):
     if not is_owner(callback.from_user):
 
         await callback.answer(
-            "⛔️ دسترسی ندارید",
-            show_alert=True
+            "⛔️ دسترسی ندارید.",
+            show_alert=True,
         )
 
         return
@@ -742,30 +789,42 @@ async def back(callback: CallbackQuery):
 
     await callback.message.edit_text(
         "👑 پنل مدیریت\n\n"
-        "یکی از گزینه‌های زیر را انتخاب کن:",
-        reply_markup=main_keyboard()
+        "یکی از گزینه‌ها را انتخاب کن:",
+        reply_markup=main_keyboard(),
     )
 
 
 # =========================================================
-# START BOT
+# MAIN
 # =========================================================
 
 async def main():
 
     if not BOT_TOKEN:
 
-        raise RuntimeError(
-            "BOT_TOKEN در Environment Variables تنظیم نشده است."
+        logger.error(
+            "BOT_TOKEN is missing."
         )
 
+        raise RuntimeError(
+            "BOT_TOKEN در Railway Variables "
+            "تنظیم نشده است."
+        )
+
+    logger.info(
+        "Starting Telegram bot..."
+    )
+
     bot = Bot(
-        token=BOT_TOKEN
+        token=BOT_TOKEN,
     )
 
     try:
 
-        await dp.start_polling(bot)
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types(),
+        )
 
     finally:
 
