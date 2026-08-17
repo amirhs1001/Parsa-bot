@@ -5,8 +5,10 @@ import uuid
 import secrets
 import logging
 from pathlib import Path
+from io import BytesIO
 
 import httpx
+import qrcode
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -15,6 +17,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    BufferedInputFile,
 )
 
 
@@ -24,18 +27,27 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
 MARZBAN_URL = "https://panell.goat-hs.online"
 
 MARZBAN_USERNAME = "amirhszz"
 MARZBAN_PASSWORD = "amirhszz"
 
-# مالک فعلی ربات
 OWNER_USERNAME = "amirhszz"
 
 DATA_FILE = Path("bot_data.json")
+
+
+# =========================================================
+# BOT
+# =========================================================
+
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN در Railway Variables تنظیم نشده است."
+    )
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
 
 # =========================================================
@@ -60,6 +72,7 @@ def load_data():
         return {
             "admins": {},
             "created_users": {},
+            "owner_chat_id": None,
         }
 
     try:
@@ -72,6 +85,7 @@ def load_data():
 
         data.setdefault("admins", {})
         data.setdefault("created_users", {})
+        data.setdefault("owner_chat_id", None)
 
         return data
 
@@ -79,6 +93,7 @@ def load_data():
         return {
             "admins": {},
             "created_users": {},
+            "owner_chat_id": None,
         }
 
 
@@ -92,6 +107,7 @@ def save_data():
         "w",
         encoding="utf-8",
     ) as f:
+
         json.dump(
             DATA,
             f,
@@ -217,7 +233,7 @@ def back_keyboard():
 
 
 # =========================================================
-# MARZBAN LOGIN
+# MARZBAN AUTH
 # =========================================================
 
 async def get_marzban_token():
@@ -246,27 +262,27 @@ async def get_marzban_token():
             data=data,
         )
 
-        if response.status_code != 200:
+    if response.status_code != 200:
 
-            raise RuntimeError(
-                "ورود به Marzban ناموفق بود:\n"
-                f"{response.status_code}\n"
-                f"{response.text[:1000]}"
-            )
-
-        result = response.json()
-
-        token = result.get(
-            "access_token"
+        raise RuntimeError(
+            "ورود به Marzban ناموفق بود:\n"
+            f"HTTP {response.status_code}\n"
+            f"{response.text[:1500]}"
         )
 
-        if not token:
+    result = response.json()
 
-            raise RuntimeError(
-                "Marzban توکن ورود را برنگرداند."
-            )
+    token = result.get(
+        "access_token"
+    )
 
-        return token
+    if not token:
+
+        raise RuntimeError(
+            "Marzban access_token برنگرداند."
+        )
+
+    return token
 
 
 # =========================================================
@@ -301,44 +317,143 @@ async def marzban_request(
 
 
 # =========================================================
+# SUBSCRIPTION URL
+# =========================================================
+
+def build_subscription_url(
+    subscription_url
+):
+
+    if not subscription_url:
+        return ""
+
+    subscription_url = str(
+        subscription_url
+    ).strip()
+
+    # اگر Marzban لینک کامل داده
+    if subscription_url.startswith(
+        "http://"
+    ) or subscription_url.startswith(
+        "https://"
+    ):
+
+        return subscription_url
+
+    # اگر /sub/... داده
+    if subscription_url.startswith("/"):
+        return (
+            MARZBAN_URL.rstrip("/")
+            + subscription_url
+        )
+
+    # اگر فقط sub/... داده
+    if subscription_url.startswith("sub/"):
+
+        return (
+            MARZBAN_URL.rstrip("/")
+            + "/"
+            + subscription_url
+        )
+
+    # حالت fallback
+    return (
+        MARZBAN_URL.rstrip("/")
+        + "/"
+        + subscription_url
+    )
+
+
+# =========================================================
+# QR CODE
+# =========================================================
+
+def make_qr_code(
+    subscription_url
+):
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+
+    qr.add_data(
+        subscription_url
+    )
+
+    qr.make(
+        fit=True
+    )
+
+    image = qr.make_image()
+
+    buffer = BytesIO()
+
+    image.save(
+        buffer,
+        format="PNG",
+    )
+
+    buffer.seek(0)
+
+    return buffer.getvalue()
+
+
+# =========================================================
 # START
 # =========================================================
 
 @dp.message(CommandStart())
-async def start(message: Message):
+async def start(
+    message: Message
+):
 
-    if is_owner(message.from_user):
+    if is_owner(
+        message.from_user
+    ):
+
+        DATA["owner_chat_id"] = (
+            message.chat.id
+        )
+
+        save_data()
 
         await message.answer(
             "👑 پنل مالک\n\n"
-            "سلام امیر 👋\n"
+            "سلام امیر 👋\n\n"
             "دسترسی کامل فعال است.",
             reply_markup=owner_keyboard(),
         )
 
         return
 
-    if is_admin(message.from_user):
+    if is_admin(
+        message.from_user
+    ):
 
         await message.answer(
             "👤 پنل ادمین\n\n"
-            "شما فقط می‌توانید کانفیگ بسازید "
-            "و کانفیگ‌های خودتان را حذف کنید.",
+            "می‌توانی کانفیگ بسازی "
+            "و کانفیگ‌های خودت را حذف کنی.",
             reply_markup=admin_keyboard(),
         )
 
         return
 
     await message.answer(
-        "⛔️ شما اجازه استفاده از ربات را ندارید."
+        "⛔️ شما اجازه استفاده از این ربات را ندارید."
     )
 
 
 # =========================================================
-# CREATE MENU
+# CREATE
 # =========================================================
 
-@dp.callback_query(F.data == "create")
+@dp.callback_query(
+    F.data == "create"
+)
 async def create_menu(
     callback: CallbackQuery
 ):
@@ -364,18 +479,13 @@ async def create_menu(
 
     await callback.message.edit_text(
         "➕ ساخت کانفیگ\n\n"
-        "پروتکل: `ALL`\n"
-        "سرور: `ALL`\n\n"
-        "📦 حجم را به GB وارد کن.\n\n"
-        "مثال:\n"
-        "`100`",
-        parse_mode="Markdown",
+        "📦 حجم درخواستی را وارد کنید:",
         reply_markup=back_keyboard(),
     )
 
 
 # =========================================================
-# TEXT INPUT
+# TEXT HANDLER
 # =========================================================
 
 @dp.message(F.text)
@@ -416,6 +526,7 @@ async def text_handler(
         username = (
             text
             .lstrip("@")
+            .strip()
             .lower()
         )
 
@@ -427,10 +538,13 @@ async def text_handler(
 
             return
 
-        if username == OWNER_USERNAME.lower():
+        if (
+            username
+            == OWNER_USERNAME.lower()
+        ):
 
             await message.answer(
-                "❌ مالک را نمی‌توان ادمین کرد."
+                "❌ مالک را نمی‌توان به‌عنوان ادمین اضافه کرد."
             )
 
             return
@@ -441,7 +555,9 @@ async def text_handler(
             )
         }
 
-        DATA["created_users"].setdefault(
+        DATA[
+            "created_users"
+        ].setdefault(
             username,
             []
         )
@@ -455,10 +571,7 @@ async def text_handler(
 
         await message.answer(
             "✅ ادمین اضافه شد.\n\n"
-            f"👤 @{username}\n\n"
-            "دسترسی‌ها:\n"
-            "• ساخت کانفیگ\n"
-            "• حذف کانفیگ‌های خودش",
+            f"👤 @{username}",
             reply_markup=owner_keyboard(),
         )
 
@@ -480,10 +593,8 @@ async def text_handler(
         except ValueError:
 
             await message.answer(
-                "❌ حجم باید فقط عدد باشد.\n\n"
-                "مثال:\n"
-                "`100`",
-                parse_mode="Markdown",
+                "❌ حجم باید به‌صورت عدد وارد شود.\n\n"
+                "📦 حجم درخواستی را وارد کنید:"
             )
 
             return
@@ -494,10 +605,7 @@ async def text_handler(
         }
 
         await message.answer(
-            "⏳ حالا مدت اعتبار را به روز وارد کن.\n\n"
-            "مثال:\n"
-            "`30`",
-            parse_mode="Markdown",
+            "⏳ مدت اعتبار را به روز وارد کنید:"
         )
 
         return
@@ -518,15 +626,15 @@ async def text_handler(
         except ValueError:
 
             await message.answer(
-                "❌ تعداد روز باید بیشتر از صفر باشد.\n\n"
-                "مثال:\n"
-                "`30`",
-                parse_mode="Markdown",
+                "❌ مدت اعتبار باید عددی بیشتر از صفر باشد.\n\n"
+                "⏳ مدت اعتبار را به روز وارد کنید:"
             )
 
             return
 
-        volume = state["volume"]
+        volume = state[
+            "volume"
+        ]
 
         USER_STATE.pop(
             user_id,
@@ -550,60 +658,59 @@ async def create_user(
     days: int,
 ):
 
-    await message.answer(
-        "⏳ در حال ساخت کانفیگ...\n\n"
-        "لطفاً صبر کن."
+    progress = await message.answer(
+        "⏳ در حال ساخت کانفیگ..."
     )
 
     try:
 
-        token = await get_marzban_token()
+        token = (
+            await get_marzban_token()
+        )
 
-        # =================================================
-        # PROTOCOL = ALL
+        # -------------------------------------------------
+        # Marzban نیاز به Proxy معتبر دارد.
+        # ALL مقدار معتبر برای proxies نیست.
         #
-        # Marzban برای User حداقل یک Proxy معتبر
-        # می‌خواهد. بنابراین VLESS را به عنوان Proxy
-        # پایه می‌فرستیم.
-        #
-        # Inboundها در کد هاردکد نشده‌اند.
-        # =================================================
+        # VLESS به عنوان Proxy پایه استفاده می‌شود.
+        # Inboundها توسط Marzban مدیریت می‌شوند.
+        # -------------------------------------------------
 
-        proxy_id = str(
+        proxy_uuid = str(
             uuid.uuid4()
         )
 
         proxies = {
             "vless": {
-                "id": proxy_id
+                "id": proxy_uuid
             }
         }
 
-        # =================================================
+        # -------------------------------------------------
         # USERNAME
-        # =================================================
+        # -------------------------------------------------
 
         username = (
             "u_"
             + secrets.token_hex(4)
         )
 
-        # =================================================
+        # -------------------------------------------------
         # EXPIRE
-        # =================================================
+        # -------------------------------------------------
 
         expire = int(
             time.time()
             + days * 86400
         )
 
-        # =================================================
+        # -------------------------------------------------
         # DATA LIMIT
-        # =================================================
+        # -------------------------------------------------
 
         if volume == 0:
 
-            data_limit = None
+            data_limit = 0
 
         else:
 
@@ -614,9 +721,9 @@ async def create_user(
                 * 1024
             )
 
-        # =================================================
+        # -------------------------------------------------
         # PAYLOAD
-        # =================================================
+        # -------------------------------------------------
 
         payload = {
             "username": username,
@@ -641,37 +748,58 @@ async def create_user(
         ):
 
             raise RuntimeError(
-                "Marzban User creation failed:\n"
-                f"{response.status_code}\n"
+                "Create user failed:\n"
+                f"HTTP {response.status_code}\n"
                 f"{response.text[:2000]}"
             )
 
         result = response.json()
 
-        # =================================================
-        # SUBSCRIPTION
-        # =================================================
+        # -------------------------------------------------
+        # REAL SUBSCRIPTION URL
+        # -------------------------------------------------
 
         subscription_url = (
             result.get(
                 "subscription_url"
-            )
-            or result.get(
-                "subscription"
             )
             or ""
         )
 
         if not subscription_url:
 
+            # بعض نسخه‌ها ممکن است subscription_url
+            # را داخل اطلاعات کاربر داشته باشند.
             subscription_url = (
-                f"{MARZBAN_URL}"
-                f"/sub/{username}"
+                result.get(
+                    "subscription"
+                )
+                or ""
             )
 
-        # =================================================
-        # SAVE OWNER
-        # =================================================
+        subscription_url = (
+            build_subscription_url(
+                subscription_url
+            )
+        )
+
+        if not subscription_url:
+
+            raise RuntimeError(
+                "Marzban لینک Subscription را در پاسخ ساخت User برنگرداند."
+            )
+
+        # -------------------------------------------------
+        # QR
+        # -------------------------------------------------
+
+        qr_bytes = make_qr_code(
+            subscription_url
+        )
+
+        # -------------------------------------------------
+        # SAVE
+        # -------------------------------------------------
 
         creator = get_username(
             message.from_user
@@ -692,45 +820,122 @@ async def create_user(
 
         save_data()
 
-        # =================================================
-        # RESULT
-        # =================================================
+        # -------------------------------------------------
+        # MESSAGE
+        # -------------------------------------------------
 
         volume_text = (
-            "♾ نامحدود"
+            "نامحدود"
             if volume == 0
             else f"{volume} GB"
         )
 
-        await message.answer(
-            "✅ کانفیگ ساخته شد!\n\n"
-            f"👤 Username:\n"
+        result_text = (
+            "✅ کانفیگ ساخته شد\n\n"
+            f"👤 نام کاربری:\n"
             f"`{username}`\n\n"
-            f"🔌 Protocol: `ALL`\n"
-            f"🌐 Servers: `ALL`\n"
-            f"📦 حجم: {volume_text}\n"
-            f"⏳ اعتبار: {days} روز\n\n"
-            "🔗 لینک Subscription:\n"
-            f"`{subscription_url}`",
+            f"📦 حجم:\n"
+            f"{volume_text}\n\n"
+            f"⏳ اعتبار:\n"
+            f"{days} روز\n\n"
+            "🔗 لینک اشتراک:\n"
+            f"`{subscription_url}`"
+        )
+
+        await progress.delete()
+
+        await message.answer(
+            result_text,
             parse_mode="Markdown",
         )
+
+        # -------------------------------------------------
+        # SEND REAL QR
+        # -------------------------------------------------
+
+        qr_file = BufferedInputFile(
+            qr_bytes,
+            filename=(
+                f"{username}_subscription.png"
+            ),
+        )
+
+        await message.answer_photo(
+            photo=qr_file,
+            caption=(
+                "📱 QR Code اشتراک\n\n"
+                f"`{username}`"
+            ),
+            parse_mode="Markdown",
+        )
+
+        # -------------------------------------------------
+        # NOTIFY OWNER WHEN ADMIN CREATES
+        # -------------------------------------------------
+
+        if (
+            not is_owner(
+                message.from_user
+            )
+            and DATA.get(
+                "owner_chat_id"
+            )
+        ):
+
+            owner_text = (
+                "🔔 کانفیگ جدید ساخته شد\n\n"
+                f"👤 توسط:\n"
+                f"@{creator}\n\n"
+                f"🧾 نام کاربری:\n"
+                f"`{username}`\n\n"
+                f"📦 حجم:\n"
+                f"{volume_text}\n\n"
+                f"⏳ اعتبار:\n"
+                f"{days} روز\n\n"
+                "🔗 لینک اشتراک:\n"
+                f"`{subscription_url}`"
+            )
+
+            await bot.send_message(
+                DATA["owner_chat_id"],
+                owner_text,
+                parse_mode="Markdown",
+            )
+
+            owner_qr = BufferedInputFile(
+                qr_bytes,
+                filename=(
+                    f"{username}_subscription.png"
+                ),
+            )
+
+            await bot.send_photo(
+                DATA["owner_chat_id"],
+                owner_qr,
+                caption="📱 QR Code اشتراک",
+            )
 
     except Exception as error:
 
         logger.exception(
-            "Create user error"
+            "Create user failed"
         )
+
+        try:
+            await progress.delete()
+        except Exception:
+            pass
 
         await message.answer(
             "❌ ساخت کانفیگ انجام نشد.\n\n"
             "خطا:\n"
-            f"`{str(error)[:2000]}`",
+            f"`{str(error)[:2500]}`",
             parse_mode="Markdown",
         )
 
 
 # =========================================================
-# ADMINS MENU
+# ADMINS
 # =========================================================
 
 @dp.callback_query(
@@ -743,12 +948,6 @@ async def admins_menu(
     if not is_owner(
         callback.from_user
     ):
-
-        await callback.answer(
-            "⛔️ فقط مالک.",
-            show_alert=True,
-        )
-
         return
 
     await callback.answer()
@@ -814,10 +1013,7 @@ async def add_admin(
 
     await callback.message.edit_text(
         "➕ افزودن ادمین\n\n"
-        "Username تلگرام را وارد کن.\n\n"
-        "مثال:\n"
-        "`username`",
-        parse_mode="Markdown",
+        "Username ادمین را وارد کنید:",
         reply_markup=back_keyboard(),
     )
 
@@ -874,7 +1070,7 @@ async def remove_admin(
     )
 
     await callback.message.edit_text(
-        "🗑 ادمینی که می‌خواهی حذف شود انتخاب کن:",
+        "🗑 ادمین موردنظر را انتخاب کنید:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=buttons
         ),
@@ -996,7 +1192,7 @@ async def my_users(
 
         await callback.message.edit_text(
             "🗑 کانفیگ‌های من\n\n"
-            "هنوز کانفیگی نساخته‌ای.",
+            "هنوز کانفیگی نساخته‌اید.",
             reply_markup=back_keyboard(),
         )
 
@@ -1028,7 +1224,7 @@ async def my_users(
 
     await callback.message.edit_text(
         "🗑 کانفیگ‌های من\n\n"
-        "برای حذف روی کانفیگ بزن:",
+        "کانفیگ موردنظر را انتخاب کنید:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=buttons
         ),
@@ -1082,7 +1278,9 @@ async def delete_user(
 
     try:
 
-        token = await get_marzban_token()
+        token = (
+            await get_marzban_token()
+        )
 
         response = await marzban_request(
             "DELETE",
@@ -1096,7 +1294,7 @@ async def delete_user(
         ):
 
             raise RuntimeError(
-                f"{response.status_code}\n"
+                f"HTTP {response.status_code}\n"
                 f"{response.text[:1000]}"
             )
 
@@ -1116,8 +1314,8 @@ async def delete_user(
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ حذف انجام نشد.\n\n"
-            f"`{str(error)[:1000]}`",
+            "❌ حذف کانفیگ انجام نشد.\n\n"
+            f"`{str(error)[:1500]}`",
             parse_mode="Markdown",
         )
 
@@ -1142,7 +1340,9 @@ async def users(
 
     try:
 
-        token = await get_marzban_token()
+        token = (
+            await get_marzban_token()
+        )
 
         response = await marzban_request(
             "GET",
@@ -1153,7 +1353,7 @@ async def users(
         if response.status_code != 200:
 
             raise RuntimeError(
-                response.text[:500]
+                response.text[:1000]
             )
 
         data = response.json()
@@ -1182,7 +1382,7 @@ async def users(
                 f"تعداد: {total}\n\n"
             )
 
-            for user in users_list[:30]:
+            for user in users_list[:40]:
 
                 name = user.get(
                     "username",
@@ -1208,8 +1408,8 @@ async def users(
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ خطا در دریافت کاربران.\n\n"
-            f"`{str(error)[:1000]}`",
+            "❌ دریافت کاربران ناموفق بود.\n\n"
+            f"`{str(error)[:1500]}`",
             parse_mode="Markdown",
         )
 
@@ -1234,7 +1434,9 @@ async def stats(
 
     try:
 
-        token = await get_marzban_token()
+        token = (
+            await get_marzban_token()
+        )
 
         response = await marzban_request(
             "GET",
@@ -1245,7 +1447,7 @@ async def stats(
         if response.status_code != 200:
 
             raise RuntimeError(
-                response.text[:500]
+                response.text[:1000]
             )
 
         data = response.json()
@@ -1280,8 +1482,8 @@ async def stats(
     except Exception as error:
 
         await callback.message.edit_text(
-            "❌ خطا در دریافت آمار.\n\n"
-            f"`{str(error)[:1000]}`",
+            "❌ دریافت آمار ناموفق بود.\n\n"
+            f"`{str(error)[:1500]}`",
             parse_mode="Markdown",
         )
 
@@ -1301,6 +1503,11 @@ async def back(
         callback.from_user
     ):
         return
+
+    USER_STATE.pop(
+        callback.from_user.id,
+        None,
+    )
 
     await callback.answer()
 
@@ -1327,23 +1534,12 @@ async def back(
 
 async def main():
 
-    if not BOT_TOKEN:
-
-        raise RuntimeError(
-            "BOT_TOKEN در Railway Variables "
-            "تنظیم نشده است."
-        )
-
     logger.info(
-        "Bot starting..."
+        "Telegram bot starting..."
     )
 
     logger.info(
         f"Owner: @{OWNER_USERNAME}"
-    )
-
-    bot = Bot(
-        token=BOT_TOKEN
     )
 
     try:
