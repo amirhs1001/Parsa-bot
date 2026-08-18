@@ -4,7 +4,6 @@ import time
 import uuid
 import secrets
 import logging
-import asyncio
 from pathlib import Path
 from io import BytesIO
 
@@ -37,14 +36,15 @@ OWNER_USERNAME = "amirhszz"
 DATA_FILE = Path("bot_data.json")
 
 
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN در Railway Environment Variables تنظیم نشده است."
+    )
+
+
 # =========================================================
 # BOT
 # =========================================================
-
-if not BOT_TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN در Railway Variables تنظیم نشده است."
-    )
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -150,29 +150,21 @@ def can_create(user):
 
 
 # =========================================================
-# REPLY KEYBOARDS
+# KEYBOARDS
 # =========================================================
 
 def owner_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(
-                    text="➕ ساخت کانفیگ"
-                )
+                KeyboardButton(text="➕ ساخت کانفیگ")
             ],
             [
-                KeyboardButton(
-                    text="👥 کاربران"
-                ),
-                KeyboardButton(
-                    text="📊 آمار"
-                ),
+                KeyboardButton(text="👥 کاربران"),
+                KeyboardButton(text="📊 آمار"),
             ],
             [
-                KeyboardButton(
-                    text="👤 مدیریت ادمین‌ها"
-                )
+                KeyboardButton(text="👤 مدیریت ادمین‌ها")
             ],
         ],
         resize_keyboard=True,
@@ -184,14 +176,10 @@ def admin_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(
-                    text="➕ ساخت کانفیگ"
-                )
+                KeyboardButton(text="➕ ساخت کانفیگ")
             ],
             [
-                KeyboardButton(
-                    text="🗑 کانفیگ‌های من"
-                )
+                KeyboardButton(text="🗑 کانفیگ‌های من")
             ],
         ],
         resize_keyboard=True,
@@ -203,9 +191,7 @@ def cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(
-                    text="❌ لغو"
-                )
+                KeyboardButton(text="❌ لغو")
             ]
         ],
         resize_keyboard=True,
@@ -216,22 +202,14 @@ def admin_management_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(
-                    text="➕ افزودن ادمین"
-                ),
-                KeyboardButton(
-                    text="🗑 حذف ادمین"
-                ),
+                KeyboardButton(text="➕ افزودن ادمین"),
+                KeyboardButton(text="🗑 حذف ادمین"),
             ],
             [
-                KeyboardButton(
-                    text="📋 لیست ادمین‌ها"
-                )
+                KeyboardButton(text="📋 لیست ادمین‌ها")
             ],
             [
-                KeyboardButton(
-                    text="🔙 بازگشت"
-                )
+                KeyboardButton(text="🔙 بازگشت")
             ],
         ],
         resize_keyboard=True,
@@ -243,21 +221,15 @@ def remove_admin_keyboard():
     buttons = []
 
     for username in DATA["admins"]:
-        buttons.append(
-            [
-                KeyboardButton(
-                    text=f"🗑 @{username}"
-                )
-            ]
-        )
-
-    buttons.append(
-        [
+        buttons.append([
             KeyboardButton(
-                text="🔙 بازگشت"
+                text=f"🗑 @{username}"
             )
-        ]
-    )
+        ])
+
+    buttons.append([
+        KeyboardButton(text="🔙 بازگشت")
+    ])
 
     return ReplyKeyboardMarkup(
         keyboard=buttons,
@@ -269,21 +241,15 @@ def remove_user_keyboard(users):
     buttons = []
 
     for username in users:
-        buttons.append(
-            [
-                KeyboardButton(
-                    text=f"🗑 {username}"
-                )
-            ]
-        )
-
-    buttons.append(
-        [
+        buttons.append([
             KeyboardButton(
-                text="🔙 بازگشت"
+                text=f"🗑 {username}"
             )
-        ]
-    )
+        ])
+
+    buttons.append([
+        KeyboardButton(text="🔙 بازگشت")
+    ])
 
     return ReplyKeyboardMarkup(
         keyboard=buttons,
@@ -498,7 +464,7 @@ async def cancel(message: Message):
 
 
 # =========================================================
-# CREATE BUTTON
+# CREATE START
 # =========================================================
 
 @dp.message(F.text == "➕ ساخت کانفیگ")
@@ -526,7 +492,7 @@ async def create_start(message: Message):
 
 
 # =========================================================
-# OWNER - ADMIN MANAGEMENT
+# ADMIN MANAGEMENT
 # =========================================================
 
 @dp.message(F.text == "👤 مدیریت ادمین‌ها")
@@ -565,7 +531,7 @@ async def add_admin_start(message: Message):
 
 
 # =========================================================
-# REMOVE ADMIN START
+# REMOVE ADMIN
 # =========================================================
 
 @dp.message(F.text == "🗑 حذف ادمین")
@@ -588,10 +554,6 @@ async def remove_admin_start(message: Message):
         reply_markup=remove_admin_keyboard(),
     )
 
-
-# =========================================================
-# REMOVE ADMIN BUTTON
-# =========================================================
 
 @dp.message(F.text.startswith("🗑 @"))
 async def remove_admin_confirm(message: Message):
@@ -645,11 +607,9 @@ async def list_admins(message: Message):
     )
 
     if not DATA["admins"]:
-
         text += "هیچ ادمینی ثبت نشده."
 
     else:
-
         for username in DATA["admins"]:
             text += f"• @{username}\n"
 
@@ -802,7 +762,7 @@ async def stats(message: Message):
 
 
 # =========================================================
-# MY USERS
+# MY CONFIGS
 # =========================================================
 
 @dp.message(F.text == "🗑 کانفیگ‌های من")
@@ -914,7 +874,7 @@ async def delete_user(message: Message):
 
 
 # =========================================================
-# GENERAL TEXT HANDLER
+# TEXT STATE HANDLER
 # =========================================================
 
 @dp.message(F.text)
@@ -935,9 +895,9 @@ async def text_handler(message: Message):
         or ""
     ).strip()
 
-    # =====================================================
+    # -----------------------------------------------------
     # ADD ADMIN
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get("step") == "add_admin":
 
@@ -995,9 +955,9 @@ async def text_handler(message: Message):
 
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # VOLUME
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get("step") == "volume":
 
@@ -1029,9 +989,9 @@ async def text_handler(message: Message):
 
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # DAYS
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get("step") == "days":
 
@@ -1066,7 +1026,7 @@ async def text_handler(message: Message):
 
 
 # =========================================================
-# CREATE MARZBAN USER
+# CREATE USER
 # =========================================================
 
 async def create_user(
@@ -1098,11 +1058,8 @@ async def create_user(
         )
 
         if volume == 0:
-
             data_limit = 0
-
         else:
-
             data_limit = (
                 volume
                 * 1024
@@ -1111,8 +1068,18 @@ async def create_user(
             )
 
         # -------------------------------------------------
-        # Marzban برای ساخت User حداقل یک Proxy می‌خواهد.
-        # ALL مقدار معتبر برای proxies نیست.
+        # PROTOCOL = ALL
+        # -------------------------------------------------
+        #
+        # برای جلوگیری از خطای:
+        #
+        # Each user needs at least one proxy
+        #
+        # حداقل یک proxy باید وجود داشته باشد.
+        #
+        # در این نسخه VLESS ایجاد می‌شود.
+        # Inbounds خالی است تا کاربر روی
+        # تمام Inboundهای فعال Marzban قابل استفاده باشد.
         # -------------------------------------------------
 
         payload = {
@@ -1156,7 +1123,7 @@ async def create_user(
         result = response.json()
 
         # -------------------------------------------------
-        # REAL SUBSCRIPTION URL
+        # REAL SUB URL
         # -------------------------------------------------
 
         subscription_url = (
@@ -1187,7 +1154,7 @@ async def create_user(
         )
 
         # -------------------------------------------------
-        # SAVE OWNER
+        # SAVE CREATOR
         # -------------------------------------------------
 
         creator = get_username(
@@ -1220,7 +1187,8 @@ async def create_user(
         )
 
         # -------------------------------------------------
-        # ONE MESSAGE = QR + INFO
+        # USER MESSAGE
+        # QR + INFORMATION IN ONE MESSAGE
         # -------------------------------------------------
 
         caption = (
@@ -1244,7 +1212,6 @@ async def create_user(
             ),
         )
 
-        # عکس QR + تمام اطلاعات در یک پیام
         await message.answer_photo(
             photo=qr_file,
             caption=caption,
@@ -1255,32 +1222,35 @@ async def create_user(
             ),
         )
 
-        # -------------------------------------------------
-# NOTIFY OWNER - SHORT REPORT
-# -------------------------------------------------
+        # =================================================
+        # OWNER REPORT
+        # =================================================
+        #
+        # مهم:
+        # مالک فقط گزارش کوتاه دریافت می‌کند.
+        #
+        # نه QR
+        # نه لینک Subscription
+        # نه اطلاعات اضافی
+        #
+        # =================================================
 
-if (
-    not is_owner(message.from_user)
-    and DATA.get("owner_chat_id")
-):
+        if (
+            not is_owner(message.from_user)
+            and DATA.get("owner_chat_id")
+        ):
 
-    owner_report = (
-        "🔔 کانفیگ جدید ساخته شد\n\n"
-        f"👤 سازنده: @{creator}\n"
-        f"🧾 کاربر: {username}\n"
-        f"📦 حجم: {volume_text}\n"
-        f"⏳ اعتبار: {days} روز"
-    )
+            owner_report = (
+                "🔔 کانفیگ جدید ساخته شد\n\n"
+                f"👤 سازنده: @{creator}\n"
+                f"🧾 کاربر: {username}\n"
+                f"📦 حجم: {volume_text}\n"
+                f"⏳ اعتبار: {days} روز"
+            )
 
-    await bot.send_message(
-        chat_id=DATA["owner_chat_id"],
-        text=owner_report,
-    )
-
-            await bot.send_photo(
+            await bot.send_message(
                 chat_id=DATA["owner_chat_id"],
-                photo=owner_qr,
-                caption=owner_caption,
+                text=owner_report,
             )
 
     except Exception as error:
@@ -1307,7 +1277,7 @@ if (
 
 
 # =========================================================
-# BACK BUTTON
+# BACK
 # =========================================================
 
 @dp.message(F.text == "🔙 بازگشت")
@@ -1356,4 +1326,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    import asyncio
+
     asyncio.run(main())
