@@ -79,7 +79,7 @@ dp = Dispatcher()
 
 
 # =========================================================
-# DATABASE
+# LOCAL DATABASE
 # =========================================================
 
 DEFAULT_DATA = {
@@ -92,20 +92,36 @@ DEFAULT_DATA = {
 
 def load_data():
     if not DATA_FILE.exists():
-        return DEFAULT_DATA.copy()
+        return {
+            "admins": [],
+            "users": {},
+            "states": {},
+            "owner_chat_id": None,
+        }
 
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8",
+        ) as f:
             data = json.load(f)
 
         for key, value in DEFAULT_DATA.items():
-            data.setdefault(key, value)
+            if key not in data:
+                data[key] = value
 
         return data
 
     except Exception:
         logger.exception("Database load failed")
-        return DEFAULT_DATA.copy()
+
+        return {
+            "admins": [],
+            "users": {},
+            "states": {},
+            "owner_chat_id": None,
+        }
 
 
 DATA = load_data()
@@ -114,7 +130,11 @@ DATA = load_data()
 def save_data():
     tmp = Path("bot_data.tmp")
 
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(
+        tmp,
+        "w",
+        encoding="utf-8",
+    ) as f:
         json.dump(
             DATA,
             f,
@@ -152,31 +172,46 @@ def is_owner(user):
 def is_admin(user):
     username = get_username(user)
 
+    admins = [
+        clean_username(x)
+        for x in DATA.get(
+            "admins",
+            [],
+        )
+    ]
+
     return (
-        is_owner(user)
-        or username in [
-            clean_username(x)
-            for x in DATA.get("admins", [])
-        ]
+        username == OWNER_USERNAME
+        or username in admins
     )
 
 
-def set_state(user_id, state):
+def set_state(
+    user_id,
+    state,
+):
     DATA["states"][str(user_id)] = state
     save_data()
 
 
 def get_state(user_id):
-    return DATA.get("states", {}).get(
+    return DATA.get(
+        "states",
+        {},
+    ).get(
         str(user_id)
     )
 
 
 def clear_state(user_id):
-    DATA.get("states", {}).pop(
+    DATA.get(
+        "states",
+        {},
+    ).pop(
         str(user_id),
         None,
     )
+
     save_data()
 
 
@@ -189,14 +224,22 @@ def owner_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="➕ ساخت کانفیگ"),
+                KeyboardButton(
+                    text="➕ ساخت کانفیگ"
+                ),
             ],
             [
-                KeyboardButton(text="📋 کانفیگ‌های من"),
-                KeyboardButton(text="👥 مدیریت ادمین‌ها"),
+                KeyboardButton(
+                    text="📋 کانفیگ‌های من"
+                ),
+                KeyboardButton(
+                    text="👥 مدیریت ادمین‌ها"
+                ),
             ],
             [
-                KeyboardButton(text="💾 بک‌آپ"),
+                KeyboardButton(
+                    text="💾 بک‌آپ"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -209,10 +252,14 @@ def admin_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="➕ ساخت کانفیگ"),
+                KeyboardButton(
+                    text="➕ ساخت کانفیگ"
+                ),
             ],
             [
-                KeyboardButton(text="📋 کانفیگ‌های من"),
+                KeyboardButton(
+                    text="📋 کانفیگ‌های من"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -225,15 +272,20 @@ def volume_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="5 GB"),
-                KeyboardButton(text="10 GB"),
-                KeyboardButton(text="20 GB"),
+                KeyboardButton(
+                    text="5 GB"
+                ),
+                KeyboardButton(
+                    text="10 GB"
+                ),
+                KeyboardButton(
+                    text="20 GB"
+                ),
             ],
             [
-                KeyboardButton(text="✏️ وارد کردن حجم"),
-            ],
-            [
-                KeyboardButton(text="🔙 بازگشت"),
+                KeyboardButton(
+                    text="🔙 بازگشت"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -246,18 +298,25 @@ def days_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="5 روز"),
-                KeyboardButton(text="10 روز"),
+                KeyboardButton(
+                    text="5 روز"
+                ),
+                KeyboardButton(
+                    text="10 روز"
+                ),
             ],
             [
-                KeyboardButton(text="15 روز"),
-                KeyboardButton(text="30 روز"),
+                KeyboardButton(
+                    text="15 روز"
+                ),
+                KeyboardButton(
+                    text="30 روز"
+                ),
             ],
             [
-                KeyboardButton(text="✏️ وارد کردن روز"),
-            ],
-            [
-                KeyboardButton(text="🔙 بازگشت"),
+                KeyboardButton(
+                    text="🔙 بازگشت"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -270,14 +329,22 @@ def admin_management_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="➕ اضافه کردن ادمین"),
+                KeyboardButton(
+                    text="➕ اضافه کردن ادمین"
+                ),
             ],
             [
-                KeyboardButton(text="🗑 حذف ادمین"),
-                KeyboardButton(text="📋 لیست ادمین‌ها"),
+                KeyboardButton(
+                    text="🗑 حذف ادمین"
+                ),
+                KeyboardButton(
+                    text="📋 لیست ادمین‌ها"
+                ),
             ],
             [
-                KeyboardButton(text="🔙 بازگشت"),
+                KeyboardButton(
+                    text="🔙 بازگشت"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -290,11 +357,17 @@ def backup_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="📤 دریافت بک‌آپ"),
-                KeyboardButton(text="📥 آپلود بک‌آپ"),
+                KeyboardButton(
+                    text="📤 دریافت بک‌آپ"
+                ),
+                KeyboardButton(
+                    text="📥 آپلود بک‌آپ"
+                ),
             ],
             [
-                KeyboardButton(text="🔙 بازگشت"),
+                KeyboardButton(
+                    text="🔙 بازگشت"
+                ),
             ],
         ],
         resize_keyboard=True,
@@ -303,12 +376,15 @@ def backup_keyboard():
 
 
 # =========================================================
-# MARZBAN
+# MARZBAN API
 # =========================================================
 
 async def get_marzban_token():
 
-    url = f"{MARZBAN_URL}/api/admin/token"
+    url = (
+        f"{MARZBAN_URL}"
+        "/api/admin/token"
+    )
 
     payload = {
         "grant_type": "password",
@@ -336,7 +412,9 @@ async def get_marzban_token():
 
     result = response.json()
 
-    token = result.get("access_token")
+    token = result.get(
+        "access_token"
+    )
 
     if not token:
 
@@ -382,7 +460,7 @@ async def marzban_request(
 
 
 # =========================================================
-# CREATE MARZBAN USER
+# CREATE USER
 # =========================================================
 
 async def create_marzban_user(
@@ -410,11 +488,10 @@ async def create_marzban_user(
     )
 
     # -----------------------------------------------------
-    # ALL THREE PROTOCOLS
+    # PROTOCOLS
     # -----------------------------------------------------
 
     proxies = {
-
         "vless": {
             "id": str(uuid.uuid4()),
         },
@@ -427,7 +504,6 @@ async def create_marzban_user(
             "method": "chacha20-ietf-poly1305",
             "password": secrets.token_urlsafe(24),
         },
-
     }
 
     # -----------------------------------------------------
@@ -466,63 +542,83 @@ async def create_marzban_user(
 
 
 # =========================================================
-# SUBSCRIPTION LINK
+# SUBSCRIPTION
 # =========================================================
 
-def get_subscription_link(result):
+def get_subscription_link(
+    result,
+):
 
     value = (
-        result.get("subscription_url")
-        or result.get("sub_link")
-        or result.get("subscription")
+        result.get(
+            "subscription_url"
+        )
+        or result.get(
+            "sub_link"
+        )
+        or result.get(
+            "subscription"
+        )
         or ""
     )
 
     value = str(value).strip()
 
     if not value:
+
         raise RuntimeError(
             "لینک Subscription توسط Marzban برگردانده نشد."
         )
 
-    # اگر API خودش URL کامل داده
-    if value.startswith("http://") or value.startswith("https://"):
+    if (
+        value.startswith(
+            "http://"
+        )
+        or value.startswith(
+            "https://"
+        )
+    ):
 
-        # فقط token بخش /sub را استخراج می‌کنیم
-        marker = "/sub/"
-
-        if marker in value:
+        if "/sub/" in value:
 
             token = value.split(
-                marker,
-                1
+                "/sub/",
+                1,
             )[1].split(
                 "?",
-                1
+                1,
             )[0].strip("/")
 
-            return f"{SUB_URL}/{token}"
+            return (
+                f"{SUB_URL}/{token}"
+            )
 
         return value
 
-    # اگر فقط token داده
     value = value.strip("/")
 
-    if value.startswith("sub/"):
+    if value.startswith(
+        "sub/"
+    ):
         value = value[4:]
 
-    return f"{SUB_URL}/{value}"
+    return (
+        f"{SUB_URL}/{value}"
+    )
 
 
 # =========================================================
-# QR
+# QR CODE
 # =========================================================
 
 def create_qr(text):
 
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        error_correction=(
+            qrcode.constants
+            .ERROR_CORRECT_M
+        ),
         box_size=10,
         border=4,
     )
@@ -547,9 +643,13 @@ def create_qr(text):
 # =========================================================
 
 @dp.message(CommandStart())
-async def start(message: Message):
+async def start(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
 
         await message.answer(
             "❌ شما اجازه استفاده از این ربات را ندارید."
@@ -557,9 +657,14 @@ async def start(message: Message):
 
         return
 
-    if is_owner(message.from_user):
+    if is_owner(
+        message.from_user
+    ):
 
-        DATA["owner_chat_id"] = message.chat.id
+        DATA["owner_chat_id"] = (
+            message.chat.id
+        )
+
         save_data()
 
         await message.answer(
@@ -581,15 +686,25 @@ async def start(message: Message):
 # BACK
 # =========================================================
 
-@dp.message(F.text == "🔙 بازگشت")
-async def back(message: Message):
+@dp.message(
+    F.text == "🔙 بازگشت"
+)
+async def back(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
-    clear_state(message.from_user.id)
+    clear_state(
+        message.from_user.id
+    )
 
-    if is_owner(message.from_user):
+    if is_owner(
+        message.from_user
+    ):
 
         await message.answer(
             "👑 پنل مالک",
@@ -605,24 +720,30 @@ async def back(message: Message):
 
 
 # =========================================================
-# CREATE CONFIG
+# CREATE START
 # =========================================================
 
-@dp.message(F.text == "➕ ساخت کانفیگ")
-async def create_start(message: Message):
+@dp.message(
+    F.text == "➕ ساخت کانفیگ"
+)
+async def create_start(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     set_state(
         message.from_user.id,
         {
-            "step": "volume",
+            "step": "volume"
         },
     )
 
     await message.answer(
-        "📦 حجم درخواستی را انتخاب کنید:",
+        "📦 حجم درخواستی را انتخاب کنید یا عدد دلخواه را مستقیم وارد کنید:",
         reply_markup=volume_keyboard(),
     )
 
@@ -640,16 +761,24 @@ async def create_start(message: Message):
         ]
     )
 )
-async def volume_select(message: Message):
+async def volume_select(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     state = get_state(
         message.from_user.id
     )
 
-    if not state or state.get("step") != "volume":
+    if (
+        not state
+        or state.get("step")
+        != "volume"
+    ):
         return
 
     volume = int(
@@ -665,104 +794,9 @@ async def volume_select(message: Message):
     )
 
     await message.answer(
-        "⏳ مدت اعتبار را انتخاب کنید:",
+        "⏳ مدت اعتبار را انتخاب کنید یا عدد دلخواه را مستقیم وارد کنید:",
         reply_markup=days_keyboard(),
     )
-
-
-# =========================================================
-# MANUAL VOLUME
-# =========================================================
-
-@dp.message(F.text == "✏️ وارد کردن حجم")
-async def manual_volume(message: Message):
-
-    if not is_admin(message.from_user):
-        return
-
-    state = get_state(
-        message.from_user.id
-    )
-
-    if not state or state.get("step") != "volume":
-        return
-
-    set_state(
-        message.from_user.id,
-        {
-            "step": "manual_volume",
-        },
-    )
-
-    await message.answer(
-        "📦 حجم درخواستی را وارد کنید:",
-        reply_markup=volume_keyboard(),
-    )
-
-
-# =========================================================
-# MANUAL VOLUME VALUE
-# =========================================================
-
-@dp.message(F.text.regexp(r"^\d+$"))
-async def numeric_input(message: Message):
-
-    if not is_admin(message.from_user):
-        return
-
-    state = get_state(
-        message.from_user.id
-    )
-
-    if not state:
-        return
-
-    value = int(message.text)
-
-    if value <= 0:
-        await message.answer(
-            "❌ مقدار باید بیشتر از صفر باشد."
-        )
-        return
-
-    # -----------------------------------------------------
-    # MANUAL VOLUME
-    # -----------------------------------------------------
-
-    if state.get("step") == "manual_volume":
-
-        set_state(
-            message.from_user.id,
-            {
-                "step": "days",
-                "volume": value,
-            },
-        )
-
-        await message.answer(
-            "⏳ مدت اعتبار را انتخاب کنید:",
-            reply_markup=days_keyboard(),
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # MANUAL DAYS
-    # -----------------------------------------------------
-
-    if state.get("step") == "manual_days":
-
-        volume = state.get("volume")
-
-        clear_state(
-            message.from_user.id
-        )
-
-        await build_config(
-            message,
-            volume,
-            value,
-        )
 
 
 # =========================================================
@@ -779,16 +813,24 @@ async def numeric_input(message: Message):
         ]
     )
 )
-async def days_select(message: Message):
+async def days_select(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     state = get_state(
         message.from_user.id
     )
 
-    if not state or state.get("step") != "days":
+    if (
+        not state
+        or state.get("step")
+        != "days"
+    ):
         return
 
     days = int(
@@ -811,34 +853,84 @@ async def days_select(message: Message):
 
 
 # =========================================================
-# MANUAL DAYS
+# DIRECT NUMBER INPUT
 # =========================================================
 
-@dp.message(F.text == "✏️ وارد کردن روز")
-async def manual_days(message: Message):
+@dp.message(
+    F.text.regexp(r"^\d+$")
+)
+async def numeric_input(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     state = get_state(
         message.from_user.id
     )
 
-    if not state or state.get("step") != "days":
+    if not state:
         return
 
-    set_state(
-        message.from_user.id,
-        {
-            "step": "manual_days",
-            "volume": state.get("volume"),
-        },
+    value = int(
+        message.text
     )
 
-    await message.answer(
-        "⏳ مدت اعتبار درخواستی را وارد کنید:",
-        reply_markup=days_keyboard(),
-    )
+    if value <= 0:
+
+        await message.answer(
+            "❌ عدد باید بیشتر از صفر باشد."
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # DIRECT VOLUME
+    # -----------------------------------------------------
+
+    if state.get(
+        "step"
+    ) == "volume":
+
+        set_state(
+            message.from_user.id,
+            {
+                "step": "days",
+                "volume": value,
+            },
+        )
+
+        await message.answer(
+            "⏳ مدت اعتبار را انتخاب کنید یا عدد دلخواه را مستقیم وارد کنید:",
+            reply_markup=days_keyboard(),
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # DIRECT DAYS
+    # -----------------------------------------------------
+
+    if state.get(
+        "step"
+    ) == "days":
+
+        volume = state.get(
+            "volume"
+        )
+
+        clear_state(
+            message.from_user.id
+        )
+
+        await build_config(
+            message,
+            volume,
+            value,
+        )
 
 
 # =========================================================
@@ -874,10 +966,6 @@ async def build_config(
             subscription
         )
 
-        # -------------------------------------------------
-        # SAVE OWNER OF CONFIG
-        # -------------------------------------------------
-
         creator = get_username(
             message.from_user
         )
@@ -893,20 +981,10 @@ async def build_config(
 
         save_data()
 
-        # -------------------------------------------------
-        # REMOVE PROGRESS
-        # -------------------------------------------------
-
         try:
             await status_message.delete()
         except Exception:
             pass
-
-        # -------------------------------------------------
-        # USER MESSAGE
-        # QR + INFORMATION IN ONE MESSAGE
-        # NO PROTOCOL SHOWN
-        # -------------------------------------------------
 
         caption = (
             "✅ کانفیگ ساخته شد\n\n"
@@ -927,13 +1005,15 @@ async def build_config(
             caption=caption,
             reply_markup=(
                 owner_keyboard()
-                if is_owner(message.from_user)
+                if is_owner(
+                    message.from_user
+                )
                 else admin_keyboard()
             ),
         )
 
         # -------------------------------------------------
-        # SHORT OWNER REPORT
+        # OWNER REPORT
         # -------------------------------------------------
 
         owner_chat_id = DATA.get(
@@ -942,7 +1022,9 @@ async def build_config(
 
         if (
             owner_chat_id
-            and not is_owner(message.from_user)
+            and not is_owner(
+                message.from_user
+            )
         ):
 
             report = (
@@ -981,7 +1063,9 @@ async def build_config(
             f"خطا:\n{str(e)[:3000]}",
             reply_markup=(
                 owner_keyboard()
-                if is_owner(message.from_user)
+                if is_owner(
+                    message.from_user
+                )
                 else admin_keyboard()
             ),
         )
@@ -991,29 +1075,40 @@ async def build_config(
 # CONFIG LIST
 # =========================================================
 
-@dp.message(F.text == "📋 کانفیگ‌های من")
-async def configs(message: Message):
+@dp.message(
+    F.text == "📋 کانفیگ‌های من"
+)
+async def configs(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     username = get_username(
         message.from_user
     )
 
-    if is_owner(message.from_user):
+    if is_owner(
+        message.from_user
+    ):
 
         all_users = []
 
         for owner, users in DATA.get(
             "users",
-            {}
+            {},
         ).items():
 
             for user in users:
 
                 all_users.append(
-                    (owner, user)
+                    (
+                        owner,
+                        user,
+                    )
                 )
 
         if not all_users:
@@ -1038,10 +1133,10 @@ async def configs(message: Message):
 
         users = DATA.get(
             "users",
-            {}
+            {},
         ).get(
             username,
-            []
+            [],
         )
 
         if not users:
@@ -1053,7 +1148,9 @@ async def configs(message: Message):
 
             return
 
-        text = "📋 کانفیگ‌های شما:\n\n"
+        text = (
+            "📋 کانفیگ‌های شما:\n\n"
+        )
 
         for user in users:
 
@@ -1063,14 +1160,17 @@ async def configs(message: Message):
 
         text += (
             "\nبرای حذف یک کانفیگ، "
-            "نام کاربر را ارسال کنید."
+            "بنویسید:\n"
+            "حذف username"
         )
 
     await message.answer(
         text,
         reply_markup=(
             owner_keyboard()
-            if is_owner(message.from_user)
+            if is_owner(
+                message.from_user
+            )
             else admin_keyboard()
         ),
     )
@@ -1080,10 +1180,16 @@ async def configs(message: Message):
 # ADMIN MANAGEMENT
 # =========================================================
 
-@dp.message(F.text == "👥 مدیریت ادمین‌ها")
-async def admin_management(message: Message):
+@dp.message(
+    F.text == "👥 مدیریت ادمین‌ها"
+)
+async def admin_management(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     await message.answer(
@@ -1096,22 +1202,27 @@ async def admin_management(message: Message):
 # ADD ADMIN
 # =========================================================
 
-@dp.message(F.text == "➕ اضافه کردن ادمین")
-async def add_admin_start(message: Message):
+@dp.message(
+    F.text == "➕ اضافه کردن ادمین"
+)
+async def add_admin_start(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     set_state(
         message.from_user.id,
         {
-            "step": "add_admin",
+            "step": "add_admin"
         },
     )
 
     await message.answer(
-        "👤 یوزرنیم ادمین را وارد کنید.\n\n"
-        "مثلاً فقط Username را ارسال کنید.",
+        "👤 Username ادمین را ارسال کنید."
     )
 
 
@@ -1119,15 +1230,21 @@ async def add_admin_start(message: Message):
 # REMOVE ADMIN
 # =========================================================
 
-@dp.message(F.text == "🗑 حذف ادمین")
-async def remove_admin_start(message: Message):
+@dp.message(
+    F.text == "🗑 حذف ادمین"
+)
+async def remove_admin_start(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     admins = DATA.get(
         "admins",
-        []
+        [],
     )
 
     if not admins:
@@ -1146,13 +1263,13 @@ async def remove_admin_start(message: Message):
             for x in admins
         )
         + "\n\n"
-        "برای حذف، Username ادمین را ارسال کنید."
+        "Username ادمینی که می‌خواهید حذف شود را ارسال کنید."
     )
 
     set_state(
         message.from_user.id,
         {
-            "step": "remove_admin",
+            "step": "remove_admin"
         },
     )
 
@@ -1166,20 +1283,28 @@ async def remove_admin_start(message: Message):
 # ADMIN LIST
 # =========================================================
 
-@dp.message(F.text == "📋 لیست ادمین‌ها")
-async def admin_list(message: Message):
+@dp.message(
+    F.text == "📋 لیست ادمین‌ها"
+)
+async def admin_list(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     admins = DATA.get(
         "admins",
-        []
+        [],
     )
 
     if not admins:
 
-        text = "📭 هیچ ادمینی وجود ندارد."
+        text = (
+            "📭 هیچ ادمینی وجود ندارد."
+        )
 
     else:
 
@@ -1202,9 +1327,13 @@ async def admin_list(message: Message):
 # =========================================================
 
 @dp.message(F.text)
-async def text_states(message: Message):
+async def text_states(
+    message: Message,
+):
 
-    if not is_admin(message.from_user):
+    if not is_admin(
+        message.from_user
+    ):
         return
 
     state = get_state(
@@ -1214,7 +1343,9 @@ async def text_states(message: Message):
     if not state:
         return
 
-    step = state.get("step")
+    step = state.get(
+        "step"
+    )
 
     text = (
         message.text or ""
@@ -1226,7 +1357,9 @@ async def text_states(message: Message):
 
     if step == "add_admin":
 
-        username = clean_username(text)
+        username = clean_username(
+            text
+        )
 
         if not username:
 
@@ -1239,7 +1372,7 @@ async def text_states(message: Message):
         if username == OWNER_USERNAME:
 
             await message.answer(
-                "❌ مالک را نمی‌توان به عنوان ادمین اضافه کرد."
+                "❌ مالک را نمی‌توان اضافه کرد."
             )
 
             return
@@ -1248,18 +1381,19 @@ async def text_states(message: Message):
             clean_username(x)
             for x in DATA.get(
                 "admins",
-                []
+                [],
             )
         ]
 
         if username in admins:
 
-            await message.answer(
-                "⚠️ این کاربر از قبل ادمین است."
-            )
-
             clear_state(
                 message.from_user.id
+            )
+
+            await message.answer(
+                "⚠️ این کاربر از قبل ادمین است.",
+                reply_markup=admin_management_keyboard(),
             )
 
             return
@@ -1287,18 +1421,23 @@ async def text_states(message: Message):
 
     if step == "remove_admin":
 
-        username = clean_username(text)
+        username = clean_username(
+            text
+        )
 
         admins = DATA.get(
             "admins",
-            []
+            [],
         )
 
         found = None
 
         for admin in admins:
 
-            if clean_username(admin) == username:
+            if clean_username(
+                admin
+            ) == username:
+
                 found = admin
                 break
 
@@ -1327,23 +1466,33 @@ async def text_states(message: Message):
 
         return
 
-    # -----------------------------------------------------
-    # DELETE CONFIG BY USERNAME
-    # -----------------------------------------------------
-
-    if step == "delete_config":
-
-        await delete_user_by_name(
-            message,
-            text,
-        )
-
-        return
-
 
 # =========================================================
 # DELETE CONFIG
 # =========================================================
+
+@dp.message(
+    F.text.regexp(r"^حذف\s+.+$")
+)
+async def delete_command(
+    message: Message,
+):
+
+    if not is_admin(
+        message.from_user
+    ):
+        return
+
+    username = message.text.split(
+        None,
+        1,
+    )[1].strip()
+
+    await delete_user_by_name(
+        message,
+        username,
+    )
+
 
 async def delete_user_by_name(
     message,
@@ -1360,7 +1509,7 @@ async def delete_user_by_name(
 
     for owner, users in DATA.get(
         "users",
-        {}
+        {},
     ).items():
 
         if username in users:
@@ -1377,7 +1526,9 @@ async def delete_user_by_name(
         return
 
     if (
-        not is_owner(message.from_user)
+        not is_owner(
+            message.from_user
+        )
         and owner_of_user != creator
     ):
 
@@ -1421,17 +1572,15 @@ async def delete_user_by_name(
                 owner_of_user
             ]
 
-        clear_state(
-            message.from_user.id
-        )
-
         save_data()
 
         await message.answer(
             "✅ کانفیگ حذف شد.",
             reply_markup=(
                 owner_keyboard()
-                if is_owner(message.from_user)
+                if is_owner(
+                    message.from_user
+                )
                 else admin_keyboard()
             ),
         )
@@ -1445,43 +1594,19 @@ async def delete_user_by_name(
 
 
 # =========================================================
-# START DELETE CONFIG
-# =========================================================
-
-@dp.message(
-    F.text.regexp(r"^حذف\s+.+$")
-)
-async def delete_command(message: Message):
-
-    if not is_admin(message.from_user):
-        return
-
-    username = message.text.split(
-        None,
-        1,
-    )[1].strip()
-
-    set_state(
-        message.from_user.id,
-        {
-            "step": "delete_config",
-        },
-    )
-
-    await delete_user_by_name(
-        message,
-        username,
-    )
-
-
-# =========================================================
 # BACKUP MENU
 # =========================================================
 
-@dp.message(F.text == "💾 بک‌آپ")
-async def backup_menu(message: Message):
+@dp.message(
+    F.text == "💾 بک‌آپ"
+)
+async def backup_menu(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     await message.answer(
@@ -1494,25 +1619,32 @@ async def backup_menu(message: Message):
 # CREATE BACKUP
 # =========================================================
 
-def create_backup_file(prefix="backup"):
+def create_backup_file(
+    prefix="backup",
+):
 
     filename = (
         f"{prefix}_"
         f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
-        f".json"
+        ".json"
     )
 
-    path = BACKUP_DIR / filename
+    path = (
+        BACKUP_DIR
+        / filename
+    )
 
     backup = {
-        "created_at": datetime.now().isoformat(),
+        "created_at": (
+            datetime.now().isoformat()
+        ),
         "admins": DATA.get(
             "admins",
-            []
+            [],
         ),
         "users": DATA.get(
             "users",
-            {}
+            {},
         ),
     }
 
@@ -1536,10 +1668,16 @@ def create_backup_file(prefix="backup"):
 # DOWNLOAD BACKUP
 # =========================================================
 
-@dp.message(F.text == "📤 دریافت بک‌آپ")
-async def download_backup(message: Message):
+@dp.message(
+    F.text == "📤 دریافت بک‌آپ"
+)
+async def download_backup(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     path = create_backup_file()
@@ -1560,16 +1698,22 @@ async def download_backup(message: Message):
 # UPLOAD BACKUP
 # =========================================================
 
-@dp.message(F.text == "📥 آپلود بک‌آپ")
-async def upload_backup_start(message: Message):
+@dp.message(
+    F.text == "📥 آپلود بک‌آپ"
+)
+async def upload_backup_start(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     set_state(
         message.from_user.id,
         {
-            "step": "upload_backup",
+            "step": "upload_backup"
         },
     )
 
@@ -1584,9 +1728,13 @@ async def upload_backup_start(message: Message):
 # =========================================================
 
 @dp.message(F.document)
-async def backup_document(message: Message):
+async def backup_document(
+    message: Message,
+):
 
-    if not is_owner(message.from_user):
+    if not is_owner(
+        message.from_user
+    ):
         return
 
     state = get_state(
@@ -1596,12 +1744,17 @@ async def backup_document(message: Message):
     if not state:
         return
 
-    if state.get("step") != "upload_backup":
+    if state.get(
+        "step"
+    ) != "upload_backup":
+
         return
 
     document = message.document
 
-    if not document.file_name.lower().endswith(".json"):
+    if not document.file_name.lower().endswith(
+        ".json"
+    ):
 
         await message.answer(
             "❌ فقط فایل JSON قابل قبول است."
@@ -1630,23 +1783,32 @@ async def backup_document(message: Message):
             )
         )
 
-        if not isinstance(data, dict):
+        if not isinstance(
+            data,
+            dict,
+        ):
             raise ValueError
 
         admins = data.get(
             "admins",
-            []
+            [],
         )
 
         users = data.get(
             "users",
-            {}
+            {},
         )
 
-        if not isinstance(admins, list):
+        if not isinstance(
+            admins,
+            list,
+        ):
             raise ValueError
 
-        if not isinstance(users, dict):
+        if not isinstance(
+            users,
+            dict,
+        ):
             raise ValueError
 
         DATA["admins"] = admins
@@ -1685,7 +1847,8 @@ async def nightly_backup():
         now = datetime.now()
 
         tomorrow = (
-            now + timedelta(days=1)
+            now
+            + timedelta(days=1)
         ).replace(
             hour=0,
             minute=0,
@@ -1738,40 +1901,6 @@ async def nightly_backup():
 
 
 # =========================================================
-# UNKNOWN TEXT
-# =========================================================
-
-@dp.message(F.text)
-async def unknown_message(message: Message):
-
-    if not is_admin(message.from_user):
-        return
-
-    # اگر پیام توسط state handler پردازش شده،
-    # اینجا چیزی ارسال نمی‌کنیم.
-    state = get_state(
-        message.from_user.id
-    )
-
-    if state:
-        return
-
-    if is_owner(message.from_user):
-
-        await message.answer(
-            "از دکمه‌های پایین استفاده کنید.",
-            reply_markup=owner_keyboard(),
-        )
-
-    else:
-
-        await message.answer(
-            "از دکمه‌های پایین استفاده کنید.",
-            reply_markup=admin_keyboard(),
-        )
-
-
-# =========================================================
 # MAIN
 # =========================================================
 
@@ -1812,7 +1941,9 @@ async def main():
 if __name__ == "__main__":
 
     try:
+
         asyncio.run(main())
 
     except KeyboardInterrupt:
+
         pass
