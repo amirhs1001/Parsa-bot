@@ -38,7 +38,7 @@ DATA_FILE = Path("bot_data.json")
 
 if not BOT_TOKEN:
     raise RuntimeError(
-        "BOT_TOKEN در Railway Environment Variables تنظیم نشده است."
+        "BOT_TOKEN در Environment Variables تنظیم نشده است."
     )
 
 
@@ -84,7 +84,9 @@ def load_data():
 
         return data
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Data load error: {e}")
+
         return {
             "admins": {},
             "created_users": {},
@@ -195,6 +197,50 @@ def cancel_keyboard():
             ]
         ],
         resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def volume_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="5 GB"),
+                KeyboardButton(text="10 GB"),
+                KeyboardButton(text="20 GB"),
+            ],
+            [
+                KeyboardButton(text="✏️ ورود دستی"),
+            ],
+            [
+                KeyboardButton(text="❌ لغو"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def days_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="5 روز"),
+                KeyboardButton(text="10 روز"),
+            ],
+            [
+                KeyboardButton(text="15 روز"),
+                KeyboardButton(text="30 روز"),
+            ],
+            [
+                KeyboardButton(text="✏️ ورود دستی"),
+            ],
+            [
+                KeyboardButton(text="❌ لغو"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
     )
 
 
@@ -406,6 +452,12 @@ def make_qr_code(subscription_url):
 @dp.message(CommandStart())
 async def start(message: Message):
 
+    # -----------------------------------------------
+    # بسیار مهم:
+    # chat_id مالک ذخیره می‌شود
+    # تا گزارش ساخت کانفیگ به او ارسال شود.
+    # -----------------------------------------------
+
     if is_owner(message.from_user):
 
         DATA["owner_chat_id"] = message.chat.id
@@ -486,8 +538,8 @@ async def create_start(message: Message):
 
     await message.answer(
         "➕ ساخت کانفیگ\n\n"
-        "📦 حجم درخواستی را وارد کنید:",
-        reply_markup=cancel_keyboard(),
+        "📦 حجم درخواستی را انتخاب کنید:",
+        reply_markup=volume_keyboard(),
     )
 
 
@@ -895,9 +947,9 @@ async def text_handler(message: Message):
         or ""
     ).strip()
 
-    # -----------------------------------------------------
+    # =====================================================
     # ADD ADMIN
-    # -----------------------------------------------------
+    # =====================================================
 
     if state.get("step") == "add_admin":
 
@@ -955,11 +1007,93 @@ async def text_handler(message: Message):
 
         return
 
-    # -----------------------------------------------------
+    # =====================================================
     # VOLUME
-    # -----------------------------------------------------
+    # =====================================================
 
     if state.get("step") == "volume":
+
+        # -------------------------
+        # دکمه‌های آماده
+        # -------------------------
+
+        if text in (
+            "5 GB",
+            "10 GB",
+            "20 GB",
+        ):
+
+            volume = int(
+                text.split()[0]
+            )
+
+            USER_STATE[user_id] = {
+                "step": "days",
+                "volume": volume,
+            }
+
+            await message.answer(
+                "⏳ مدت اعتبار را انتخاب کنید:",
+                reply_markup=days_keyboard(),
+            )
+
+            return
+
+        # -------------------------
+        # ورود دستی
+        # -------------------------
+
+        if text == "✏️ ورود دستی":
+
+            USER_STATE[user_id] = {
+                "step": "volume_manual"
+            }
+
+            await message.answer(
+                "📦 حجم درخواستی را به GB وارد کنید:",
+                reply_markup=cancel_keyboard(),
+            )
+
+            return
+
+        # -------------------------
+        # عدد دستی
+        # -------------------------
+
+        try:
+
+            volume = int(text)
+
+            if volume < 0:
+                raise ValueError
+
+        except ValueError:
+
+            await message.answer(
+                "❌ حجم نامعتبر است.\n\n"
+                "📦 یکی از گزینه‌ها را انتخاب کنید:",
+                reply_markup=volume_keyboard(),
+            )
+
+            return
+
+        USER_STATE[user_id] = {
+            "step": "days",
+            "volume": volume,
+        }
+
+        await message.answer(
+            "⏳ مدت اعتبار را انتخاب کنید:",
+            reply_markup=days_keyboard(),
+        )
+
+        return
+
+    # =====================================================
+    # VOLUME MANUAL
+    # =====================================================
+
+    if state.get("step") == "volume_manual":
 
         try:
 
@@ -972,7 +1106,8 @@ async def text_handler(message: Message):
 
             await message.answer(
                 "❌ حجم باید به‌صورت عدد وارد شود.\n\n"
-                "📦 حجم درخواستی را وارد کنید:"
+                "📦 حجم درخواستی را به GB وارد کنید:",
+                reply_markup=cancel_keyboard(),
             )
 
             return
@@ -983,17 +1118,87 @@ async def text_handler(message: Message):
         }
 
         await message.answer(
-            "⏳ مدت اعتبار را به روز وارد کنید:",
-            reply_markup=cancel_keyboard(),
+            "⏳ مدت اعتبار را انتخاب کنید:",
+            reply_markup=days_keyboard(),
         )
 
         return
 
-    # -----------------------------------------------------
+    # =====================================================
     # DAYS
-    # -----------------------------------------------------
+    # =====================================================
 
     if state.get("step") == "days":
+
+        # -------------------------
+        # دکمه‌های آماده
+        # -------------------------
+
+        if text.endswith(" روز"):
+
+            try:
+                days = int(
+                    text.replace(
+                        " روز",
+                        ""
+                    ).strip()
+                )
+            except ValueError:
+                days = None
+
+            if days in (
+                5,
+                10,
+                15,
+                30,
+            ):
+
+                volume = state["volume"]
+
+                USER_STATE.pop(
+                    user_id,
+                    None,
+                )
+
+                await create_user(
+                    message,
+                    volume,
+                    days,
+                )
+
+                return
+
+        # -------------------------
+        # ورود دستی
+        # -------------------------
+
+        if text == "✏️ ورود دستی":
+
+            USER_STATE[user_id] = {
+                "step": "days_manual",
+                "volume": state["volume"],
+            }
+
+            await message.answer(
+                "⏳ مدت اعتبار را به روز وارد کنید:",
+                reply_markup=cancel_keyboard(),
+            )
+
+            return
+
+        await message.answer(
+            "❌ مدت اعتبار نامعتبر است.\n\n"
+            "⏳ یکی از گزینه‌ها را انتخاب کنید:",
+            reply_markup=days_keyboard(),
+        )
+
+        return
+
+    # =====================================================
+    # DAYS MANUAL
+    # =====================================================
+
+    if state.get("step") == "days_manual":
 
         try:
 
@@ -1006,7 +1211,8 @@ async def text_handler(message: Message):
 
             await message.answer(
                 "❌ مدت اعتبار باید عددی بیشتر از صفر باشد.\n\n"
-                "⏳ مدت اعتبار را به روز وارد کنید:"
+                "⏳ مدت اعتبار را به روز وارد کنید:",
+                reply_markup=cancel_keyboard(),
             )
 
             return
@@ -1058,8 +1264,13 @@ async def create_user(
         )
 
         if volume == 0:
+
             data_limit = 0
+
+            volume_text = "نامحدود"
+
         else:
+
             data_limit = (
                 volume
                 * 1024
@@ -1067,20 +1278,13 @@ async def create_user(
                 * 1024
             )
 
-        # -------------------------------------------------
-        # PROTOCOL = ALL
-        # -------------------------------------------------
-        #
-        # برای جلوگیری از خطای:
-        #
-        # Each user needs at least one proxy
-        #
-        # حداقل یک proxy باید وجود داشته باشد.
-        #
-        # در این نسخه VLESS ایجاد می‌شود.
-        # Inbounds خالی است تا کاربر روی
-        # تمام Inboundهای فعال Marzban قابل استفاده باشد.
-        # -------------------------------------------------
+            volume_text = (
+                f"{volume} GB"
+            )
+
+        # =================================================
+        # USER PAYLOAD
+        # =================================================
 
         payload = {
             "username": username,
@@ -1091,6 +1295,7 @@ async def create_user(
                 }
             },
 
+            # بدون انتخاب Inbound خاص
             "inbounds": {},
 
             "expire": expire,
@@ -1122,9 +1327,9 @@ async def create_user(
 
         result = response.json()
 
-        # -------------------------------------------------
-        # REAL SUB URL
-        # -------------------------------------------------
+        # =================================================
+        # REAL SUBSCRIPTION
+        # =================================================
 
         subscription_url = (
             result.get(
@@ -1145,17 +1350,17 @@ async def create_user(
                 "Marzban لینک Subscription واقعی را برنگرداند."
             )
 
-        # -------------------------------------------------
+        # =================================================
         # QR
-        # -------------------------------------------------
+        # =================================================
 
         qr_bytes = make_qr_code(
             subscription_url
         )
 
-        # -------------------------------------------------
-        # SAVE CREATOR
-        # -------------------------------------------------
+        # =================================================
+        # SAVE OWNER
+        # =================================================
 
         creator = get_username(
             message.from_user
@@ -1176,20 +1381,18 @@ async def create_user(
 
         save_data()
 
-        # -------------------------------------------------
-        # VOLUME TEXT
-        # -------------------------------------------------
+        # =================================================
+        # DELETE PROGRESS
+        # =================================================
 
-        volume_text = (
-            "نامحدود"
-            if volume == 0
-            else f"{volume} GB"
-        )
+        try:
+            await progress.delete()
+        except Exception:
+            pass
 
-        # -------------------------------------------------
+        # =================================================
         # USER MESSAGE
-        # QR + INFORMATION IN ONE MESSAGE
-        # -------------------------------------------------
+        # =================================================
 
         caption = (
             "✅ کانفیگ ساخته شد\n\n"
@@ -1202,8 +1405,6 @@ async def create_user(
             "🔗 لینک اشتراک:\n"
             f"{subscription_url}"
         )
-
-        await progress.delete()
 
         qr_file = BufferedInputFile(
             qr_bytes,
@@ -1225,19 +1426,16 @@ async def create_user(
         # =================================================
         # OWNER REPORT
         # =================================================
-        #
-        # مهم:
-        # مالک فقط گزارش کوتاه دریافت می‌کند.
-        #
-        # نه QR
-        # نه لینک Subscription
-        # نه اطلاعات اضافی
-        #
-        # =================================================
 
+        owner_chat_id = DATA.get(
+            "owner_chat_id"
+        )
+
+        # اگر مالک همان شخص سازنده نباشد،
+        # گزارش برای مالک ارسال می‌شود.
         if (
-            not is_owner(message.from_user)
-            and DATA.get("owner_chat_id")
+            owner_chat_id
+            and not is_owner(message.from_user)
         ):
 
             owner_report = (
@@ -1248,9 +1446,29 @@ async def create_user(
                 f"⏳ اعتبار: {days} روز"
             )
 
-            await bot.send_message(
-                chat_id=DATA["owner_chat_id"],
-                text=owner_report,
+            try:
+
+                await bot.send_message(
+                    chat_id=owner_chat_id,
+                    text=owner_report,
+                )
+
+                logger.info(
+                    f"Owner report sent for {username}"
+                )
+
+            except Exception as report_error:
+
+                logger.error(
+                    "Owner report failed: "
+                    f"{report_error}"
+                )
+
+        elif not owner_chat_id:
+
+            logger.warning(
+                "Owner chat_id is not saved. "
+                "Owner must send /start to the bot."
             )
 
     except Exception as error:
@@ -1317,6 +1535,14 @@ async def main():
         f"Owner: @{OWNER_USERNAME}"
     )
 
+    # -----------------------------------------------------
+    # اگر مالک قبلاً /start زده باشد، chat_id موجود است.
+    # -----------------------------------------------------
+
+    logger.info(
+        f"Owner chat id: {DATA.get('owner_chat_id')}"
+    )
+
     await dp.start_polling(
         bot,
         allowed_updates=(
@@ -1325,7 +1551,12 @@ async def main():
     )
 
 
+# =========================================================
+# RUN
+# =========================================================
+
 if __name__ == "__main__":
+
     import asyncio
 
     asyncio.run(main())
