@@ -36,7 +36,7 @@ MARZBAN_URL = "https://panell.goat-hs.online"
 MARZBAN_USERNAME = "amirhszz"
 MARZBAN_PASSWORD = "amirhszz"
 
-OWNER_USERNAME = "amirhszz"
+OWNER_USERNAME = "parsa9599"
 
 DATA_FILE = Path("bot_data.json")
 
