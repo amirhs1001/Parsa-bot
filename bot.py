@@ -2,74 +2,55 @@ import asyncio
 import json
 import logging
 import os
-import re
 import secrets
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
 
 import httpx
 import qrcode
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.types import (
     Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
     BufferedInputFile,
-    Document,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 # =========================================================
-# SETTINGS
+# CONFIG
 # =========================================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 MARZBAN_URL = os.getenv(
     "MARZBAN_URL",
-    "https://panell.goat-hs.online",
+    "https://panell.goat-hs.online"
 ).rstrip("/")
 
 MARZBAN_USERNAME = os.getenv(
     "MARZBAN_USERNAME",
-    "amirhszz",
+    "amirhszz"
 ).strip()
 
 MARZBAN_PASSWORD = os.getenv(
     "MARZBAN_PASSWORD",
-    "amirhszz",
+    ""
 ).strip()
 
-SUBSCRIPTION_PREFIX = os.getenv(
-    "SUBSCRIPTION_PREFIX",
-    "https://panell.goat-hs.online/sub",
-).rstrip("/")
+OWNER_USERNAME = "amirhszz"
 
-OWNER_USERNAME = os.getenv(
-    "OWNER_USERNAME",
-    "amirhszz",
-).replace("@", "").lower()
+SUB_URL = "https://panell.goat-hs.online/sub"
 
-DATA_FILE = Path(
-    os.getenv("DATA_FILE", "bot_data.json")
-)
+DATA_FILE = Path("bot_data.json")
+BACKUP_DIR = Path("backups")
 
-BACKUP_DIR = Path(
-    os.getenv("BACKUP_DIR", "backups")
-)
-
-BACKUP_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+BACKUP_DIR.mkdir(exist_ok=True)
 
 
 # =========================================================
@@ -82,62 +63,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-# =========================================================
-# DATA
-# =========================================================
-
-DEFAULT_DATA = {
-    "admins": [],
-    "created_users": {},
-}
-
-
-def load_data():
-    if not DATA_FILE.exists():
-        return DEFAULT_DATA.copy()
-
-    try:
-        with open(
-            DATA_FILE,
-            "r",
-            encoding="utf-8",
-        ) as f:
-            data = json.load(f)
-
-        if not isinstance(data, dict):
-            return DEFAULT_DATA.copy()
-
-        data.setdefault("admins", [])
-        data.setdefault("created_users", {})
-
-        return data
-
-    except Exception:
-        logger.exception("Could not load data")
-        return DEFAULT_DATA.copy()
-
-
-DATA = load_data()
-
-
-def save_data():
-    temp = DATA_FILE.with_suffix(".tmp")
-
-    with open(
-        temp,
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump(
-            DATA,
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    temp.replace(DATA_FILE)
 
 
 # =========================================================
@@ -154,105 +79,238 @@ dp = Dispatcher()
 
 
 # =========================================================
-# USER HELPERS
+# DATABASE
 # =========================================================
 
-def normalize_username(username: Optional[str]) -> str:
+DEFAULT_DATA = {
+    "admins": [],
+    "users": {},
+    "states": {},
+    "owner_chat_id": None,
+}
+
+
+def load_data():
+    if not DATA_FILE.exists():
+        return DEFAULT_DATA.copy()
+
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        for key, value in DEFAULT_DATA.items():
+            data.setdefault(key, value)
+
+        return data
+
+    except Exception:
+        logger.exception("Database load failed")
+        return DEFAULT_DATA.copy()
+
+
+DATA = load_data()
+
+
+def save_data():
+    tmp = Path("bot_data.tmp")
+
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(
+            DATA,
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    tmp.replace(DATA_FILE)
+
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+def clean_username(username):
     if not username:
         return ""
 
     return username.replace("@", "").strip().lower()
 
 
-def get_username(user) -> str:
-    return normalize_username(
+def get_username(user):
+    return clean_username(
         getattr(user, "username", None)
     )
 
 
-def is_owner(user) -> bool:
+def is_owner(user):
     return (
         get_username(user)
         == OWNER_USERNAME
     )
 
 
-def is_admin(user) -> bool:
+def is_admin(user):
     username = get_username(user)
 
     return (
         is_owner(user)
         or username in [
-            normalize_username(x)
+            clean_username(x)
             for x in DATA.get("admins", [])
         ]
     )
 
 
+def set_state(user_id, state):
+    DATA["states"][str(user_id)] = state
+    save_data()
+
+
+def get_state(user_id):
+    return DATA.get("states", {}).get(
+        str(user_id)
+    )
+
+
+def clear_state(user_id):
+    DATA.get("states", {}).pop(
+        str(user_id),
+        None,
+    )
+    save_data()
+
+
+# =========================================================
+# KEYBOARDS
+# =========================================================
+
 def owner_keyboard():
-    builder = InlineKeyboardBuilder()
 
-    builder.row(
-        InlineKeyboardButton(
-            text="➕ ساخت کانفیگ",
-            callback_data="create_config",
-        )
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="➕ ساخت کانفیگ"),
+            ],
+            [
+                KeyboardButton(text="📋 کانفیگ‌های من"),
+                KeyboardButton(text="👥 مدیریت ادمین‌ها"),
+            ],
+            [
+                KeyboardButton(text="💾 بک‌آپ"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
     )
-
-    builder.row(
-        InlineKeyboardButton(
-            text="👥 مدیریت ادمین‌ها",
-            callback_data="manage_admins",
-        )
-    )
-
-    builder.row(
-        InlineKeyboardButton(
-            text="📋 کانفیگ‌ها",
-            callback_data="my_configs",
-        )
-    )
-
-    builder.row(
-        InlineKeyboardButton(
-            text="💾 بک‌آپ",
-            callback_data="backup_menu",
-        )
-    )
-
-    return builder.as_markup()
 
 
 def admin_keyboard():
-    builder = InlineKeyboardBuilder()
 
-    builder.row(
-        InlineKeyboardButton(
-            text="➕ ساخت کانفیگ",
-            callback_data="create_config",
-        )
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="➕ ساخت کانفیگ"),
+            ],
+            [
+                KeyboardButton(text="📋 کانفیگ‌های من"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
     )
 
-    builder.row(
-        InlineKeyboardButton(
-            text="📋 کانفیگ‌های من",
-            callback_data="my_configs",
-        )
+
+def volume_keyboard():
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="5 GB"),
+                KeyboardButton(text="10 GB"),
+                KeyboardButton(text="20 GB"),
+            ],
+            [
+                KeyboardButton(text="✏️ وارد کردن حجم"),
+            ],
+            [
+                KeyboardButton(text="🔙 بازگشت"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
     )
 
-    return builder.as_markup()
+
+def days_keyboard():
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="5 روز"),
+                KeyboardButton(text="10 روز"),
+            ],
+            [
+                KeyboardButton(text="15 روز"),
+                KeyboardButton(text="30 روز"),
+            ],
+            [
+                KeyboardButton(text="✏️ وارد کردن روز"),
+            ],
+            [
+                KeyboardButton(text="🔙 بازگشت"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def admin_management_keyboard():
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="➕ اضافه کردن ادمین"),
+            ],
+            [
+                KeyboardButton(text="🗑 حذف ادمین"),
+                KeyboardButton(text="📋 لیست ادمین‌ها"),
+            ],
+            [
+                KeyboardButton(text="🔙 بازگشت"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def backup_keyboard():
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="📤 دریافت بک‌آپ"),
+                KeyboardButton(text="📥 آپلود بک‌آپ"),
+            ],
+            [
+                KeyboardButton(text="🔙 بازگشت"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 # =========================================================
-# MARZBAN API
+# MARZBAN
 # =========================================================
 
-async def get_marzban_token() -> str:
-    url = (
-        f"{MARZBAN_URL}/api/admin/token"
-    )
+async def get_marzban_token():
 
-    data = {
+    url = f"{MARZBAN_URL}/api/admin/token"
+
+    payload = {
         "grant_type": "password",
         "username": MARZBAN_USERNAME,
         "password": MARZBAN_PASSWORD,
@@ -265,39 +323,40 @@ async def get_marzban_token() -> str:
 
         response = await client.post(
             url,
-            data=data,
+            data=payload,
         )
 
     if response.status_code != 200:
+
         raise RuntimeError(
-            "گرفتن توکن Marzban ناموفق بود.\n"
-            f"{response.status_code}\n"
+            "Marzban Token Error\n"
+            f"HTTP {response.status_code}\n"
             f"{response.text[:2000]}"
         )
 
     result = response.json()
 
-    token = result.get(
-        "access_token"
-    )
+    token = result.get("access_token")
 
     if not token:
+
         raise RuntimeError(
-            "access_token از Marzban دریافت نشد."
+            "access_token دریافت نشد."
         )
 
     return token
 
 
 async def marzban_request(
-    method: str,
-    path: str,
-    token: str,
+    method,
+    endpoint,
+    token,
     **kwargs,
 ):
+
     url = (
         f"{MARZBAN_URL}"
-        f"/{path.lstrip('/')}"
+        f"/{endpoint.lstrip('/')}"
     )
 
     headers = kwargs.pop(
@@ -323,63 +382,143 @@ async def marzban_request(
 
 
 # =========================================================
-# SUBSCRIPTION
+# CREATE MARZBAN USER
 # =========================================================
 
-def build_subscription_url(
-    result: dict,
-) -> str:
+async def create_marzban_user(
+    volume,
+    days,
+):
 
-    original = (
-        result.get("subscription_url")
-        or ""
-    ).strip()
+    token = await get_marzban_token()
 
-    if not original:
-        raise RuntimeError(
-            "Marzban لینک Subscription را "
-            "برنگرداند."
-        )
-
-    # اگر خود API فقط token/path داده باشد
-    if not original.startswith(
-        ("http://", "https://")
-    ):
-
-        token = original.strip(
-            "/"
-        )
-
-        if token.startswith("sub/"):
-            token = token[4:]
-
-        return (
-            f"{SUBSCRIPTION_PREFIX}"
-            f"/{token}"
-        )
-
-    # تلاش برای استخراج /sub/TOKEN
-    match = re.search(
-        r"/sub/([^/?#]+)",
-        original,
+    username = (
+        "u_"
+        + secrets.token_hex(4)
     )
 
-    if match:
-        token = match.group(1)
+    expire = int(
+        time.time()
+        + days * 86400
+    )
 
-        return (
-            f"{SUBSCRIPTION_PREFIX}"
-            f"/{token}"
+    data_limit = (
+        volume
+        * 1024
+        * 1024
+        * 1024
+    )
+
+    # -----------------------------------------------------
+    # ALL THREE PROTOCOLS
+    # -----------------------------------------------------
+
+    proxies = {
+
+        "vless": {
+            "id": str(uuid.uuid4()),
+        },
+
+        "trojan": {
+            "password": secrets.token_urlsafe(24),
+        },
+
+        "shadowsocks": {
+            "method": "chacha20-ietf-poly1305",
+            "password": secrets.token_urlsafe(24),
+        },
+
+    }
+
+    # -----------------------------------------------------
+    # EMPTY INBOUNDS = ALL INBOUNDS
+    # -----------------------------------------------------
+
+    payload = {
+        "username": username,
+        "status": "active",
+        "expire": expire,
+        "data_limit": data_limit,
+        "data_limit_reset_strategy": "no_reset",
+        "proxies": proxies,
+        "inbounds": {},
+    }
+
+    response = await marzban_request(
+        "POST",
+        "/api/user",
+        token,
+        json=payload,
+    )
+
+    if response.status_code not in (
+        200,
+        201,
+    ):
+
+        raise RuntimeError(
+            "Create user failed: "
+            f"{response.status_code}\n"
+            f"{response.text[:3000]}"
         )
 
-    # اگر API خودش لینک /sub/token داده
-    # ولی regex نتوانست پیدا کند
-    return original
+    return response.json(), username
 
 
-def make_qr_code(
-    text: str,
-) -> bytes:
+# =========================================================
+# SUBSCRIPTION LINK
+# =========================================================
+
+def get_subscription_link(result):
+
+    value = (
+        result.get("subscription_url")
+        or result.get("sub_link")
+        or result.get("subscription")
+        or ""
+    )
+
+    value = str(value).strip()
+
+    if not value:
+        raise RuntimeError(
+            "لینک Subscription توسط Marzban برگردانده نشد."
+        )
+
+    # اگر API خودش URL کامل داده
+    if value.startswith("http://") or value.startswith("https://"):
+
+        # فقط token بخش /sub را استخراج می‌کنیم
+        marker = "/sub/"
+
+        if marker in value:
+
+            token = value.split(
+                marker,
+                1
+            )[1].split(
+                "?",
+                1
+            )[0].strip("/")
+
+            return f"{SUB_URL}/{token}"
+
+        return value
+
+    # اگر فقط token داده
+    value = value.strip("/")
+
+    if value.startswith("sub/"):
+        value = value[4:]
+
+    return f"{SUB_URL}/{value}"
+
+
+# =========================================================
+# QR
+# =========================================================
+
+def create_qr(text):
 
     qr = qrcode.QRCode(
         version=None,
@@ -393,155 +532,381 @@ def make_qr_code(
 
     image = qr.make_image()
 
-    output = BytesIO()
+    buffer = BytesIO()
 
     image.save(
-        output,
+        buffer,
         format="PNG",
     )
 
-    return output.getvalue()
+    return buffer.getvalue()
 
 
 # =========================================================
-# USER CREATION
+# START
 # =========================================================
 
-async def create_user(
-    message: Message,
-    volume: int,
-    days: int,
+@dp.message(CommandStart())
+async def start(message: Message):
+
+    if not is_admin(message.from_user):
+
+        await message.answer(
+            "❌ شما اجازه استفاده از این ربات را ندارید."
+        )
+
+        return
+
+    if is_owner(message.from_user):
+
+        DATA["owner_chat_id"] = message.chat.id
+        save_data()
+
+        await message.answer(
+            "👑 پنل مالک\n\n"
+            "یکی از گزینه‌های پایین را انتخاب کنید.",
+            reply_markup=owner_keyboard(),
+        )
+
+    else:
+
+        await message.answer(
+            "👤 پنل ادمین\n\n"
+            "یکی از گزینه‌های پایین را انتخاب کنید.",
+            reply_markup=admin_keyboard(),
+        )
+
+
+# =========================================================
+# BACK
+# =========================================================
+
+@dp.message(F.text == "🔙 بازگشت")
+async def back(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    clear_state(message.from_user.id)
+
+    if is_owner(message.from_user):
+
+        await message.answer(
+            "👑 پنل مالک",
+            reply_markup=owner_keyboard(),
+        )
+
+    else:
+
+        await message.answer(
+            "👤 پنل ادمین",
+            reply_markup=admin_keyboard(),
+        )
+
+
+# =========================================================
+# CREATE CONFIG
+# =========================================================
+
+@dp.message(F.text == "➕ ساخت کانفیگ")
+async def create_start(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    set_state(
+        message.from_user.id,
+        {
+            "step": "volume",
+        },
+    )
+
+    await message.answer(
+        "📦 حجم درخواستی را انتخاب کنید:",
+        reply_markup=volume_keyboard(),
+    )
+
+
+# =========================================================
+# VOLUME BUTTONS
+# =========================================================
+
+@dp.message(
+    F.text.in_(
+        [
+            "5 GB",
+            "10 GB",
+            "20 GB",
+        ]
+    )
+)
+async def volume_select(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state or state.get("step") != "volume":
+        return
+
+    volume = int(
+        message.text.split()[0]
+    )
+
+    set_state(
+        message.from_user.id,
+        {
+            "step": "days",
+            "volume": volume,
+        },
+    )
+
+    await message.answer(
+        "⏳ مدت اعتبار را انتخاب کنید:",
+        reply_markup=days_keyboard(),
+    )
+
+
+# =========================================================
+# MANUAL VOLUME
+# =========================================================
+
+@dp.message(F.text == "✏️ وارد کردن حجم")
+async def manual_volume(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state or state.get("step") != "volume":
+        return
+
+    set_state(
+        message.from_user.id,
+        {
+            "step": "manual_volume",
+        },
+    )
+
+    await message.answer(
+        "📦 حجم درخواستی را وارد کنید:",
+        reply_markup=volume_keyboard(),
+    )
+
+
+# =========================================================
+# MANUAL VOLUME VALUE
+# =========================================================
+
+@dp.message(F.text.regexp(r"^\d+$"))
+async def numeric_input(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state:
+        return
+
+    value = int(message.text)
+
+    if value <= 0:
+        await message.answer(
+            "❌ مقدار باید بیشتر از صفر باشد."
+        )
+        return
+
+    # -----------------------------------------------------
+    # MANUAL VOLUME
+    # -----------------------------------------------------
+
+    if state.get("step") == "manual_volume":
+
+        set_state(
+            message.from_user.id,
+            {
+                "step": "days",
+                "volume": value,
+            },
+        )
+
+        await message.answer(
+            "⏳ مدت اعتبار را انتخاب کنید:",
+            reply_markup=days_keyboard(),
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # MANUAL DAYS
+    # -----------------------------------------------------
+
+    if state.get("step") == "manual_days":
+
+        volume = state.get("volume")
+
+        clear_state(
+            message.from_user.id
+        )
+
+        await build_config(
+            message,
+            volume,
+            value,
+        )
+
+
+# =========================================================
+# DAYS BUTTONS
+# =========================================================
+
+@dp.message(
+    F.text.in_(
+        [
+            "5 روز",
+            "10 روز",
+            "15 روز",
+            "30 روز",
+        ]
+    )
+)
+async def days_select(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state or state.get("step") != "days":
+        return
+
+    days = int(
+        message.text.split()[0]
+    )
+
+    volume = state.get(
+        "volume"
+    )
+
+    clear_state(
+        message.from_user.id
+    )
+
+    await build_config(
+        message,
+        volume,
+        days,
+    )
+
+
+# =========================================================
+# MANUAL DAYS
+# =========================================================
+
+@dp.message(F.text == "✏️ وارد کردن روز")
+async def manual_days(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state or state.get("step") != "days":
+        return
+
+    set_state(
+        message.from_user.id,
+        {
+            "step": "manual_days",
+            "volume": state.get("volume"),
+        },
+    )
+
+    await message.answer(
+        "⏳ مدت اعتبار درخواستی را وارد کنید:",
+        reply_markup=days_keyboard(),
+    )
+
+
+# =========================================================
+# BUILD CONFIG
+# =========================================================
+
+async def build_config(
+    message,
+    volume,
+    days,
 ):
 
-    progress = await message.answer(
+    status_message = await message.answer(
         "⏳ در حال ساخت کانفیگ..."
     )
 
     try:
 
-        token = await get_marzban_token()
-
-        username = (
-            "u_"
-            + secrets.token_hex(4)
-        )
-
-        expire = int(
-            time.time()
-            + days * 86400
-        )
-
-        data_limit = (
-            volume
-            * 1024
-            * 1024
-            * 1024
-        )
-
-        # =================================================
-        # PROTOCOLS
-        # =================================================
-
-        proxies = {
-            "vless": {
-                "id": str(
-                    uuid.uuid4()
-                )
-            },
-
-            "trojan": {
-                "password": secrets.token_urlsafe(18)
-            },
-
-            "shadowsocks": {
-                "password": secrets.token_urlsafe(18),
-                "method": "chacha20-ietf-poly1305",
-            },
-        }
-
-        # =================================================
-        # IMPORTANT
-        #
-        # Empty inbounds = ALL INBOUNDS
-        # =================================================
-
-        payload = {
-            "username": username,
-            "status": "active",
-            "expire": expire,
-            "data_limit": data_limit,
-            "data_limit_reset_strategy": "no_reset",
-            "proxies": proxies,
-            "inbounds": {},
-        }
-
-        logger.info(
-            "Creating user: %s",
-            username,
-        )
-
-        response = await marzban_request(
-            "POST",
-            "/api/user",
-            token,
-            json=payload,
-        )
-
-        if response.status_code not in (
-            200,
-            201,
-        ):
-
-            raise RuntimeError(
-                "Create user failed: "
-                f"{response.status_code}\n"
-                f"{response.text[:3000]}"
+        result, username = (
+            await create_marzban_user(
+                volume,
+                days,
             )
+        )
 
-        result = response.json()
-
-        subscription_url = (
-            build_subscription_url(
+        subscription = (
+            get_subscription_link(
                 result
             )
         )
 
-        qr_bytes = make_qr_code(
-            subscription_url
+        qr = create_qr(
+            subscription
         )
+
+        # -------------------------------------------------
+        # SAVE OWNER OF CONFIG
+        # -------------------------------------------------
 
         creator = get_username(
             message.from_user
         )
 
-        DATA.setdefault(
-            "created_users",
-            {},
-        )
-
-        DATA[
-            "created_users"
-        ].setdefault(
+        DATA["users"].setdefault(
             creator,
             [],
         )
 
-        DATA[
-            "created_users"
-        ][creator].append(
+        DATA["users"][creator].append(
             username
         )
 
         save_data()
 
+        # -------------------------------------------------
+        # REMOVE PROGRESS
+        # -------------------------------------------------
+
         try:
-            await progress.delete()
+            await status_message.delete()
         except Exception:
             pass
 
-        # =================================================
+        # -------------------------------------------------
         # USER MESSAGE
-        # =================================================
+        # QR + INFORMATION IN ONE MESSAGE
+        # NO PROTOCOL SHOWN
+        # -------------------------------------------------
 
         caption = (
             "✅ کانفیگ ساخته شد\n\n"
@@ -549,29 +914,27 @@ async def create_user(
             f"📦 حجم: {volume} GB\n"
             f"⏳ اعتبار: {days} روز\n\n"
             "🔗 لینک اشتراک:\n"
-            f"{subscription_url}"
+            f"{subscription}"
         )
 
-        qr_file = BufferedInputFile(
-            qr_bytes,
+        photo = BufferedInputFile(
+            qr,
             filename=f"{username}.png",
         )
 
         await message.answer_photo(
-            photo=qr_file,
+            photo=photo,
             caption=caption,
             reply_markup=(
                 owner_keyboard()
-                if is_owner(
-                    message.from_user
-                )
+                if is_owner(message.from_user)
                 else admin_keyboard()
             ),
         )
 
-        # =================================================
-        # OWNER REPORT
-        # =================================================
+        # -------------------------------------------------
+        # SHORT OWNER REPORT
+        # -------------------------------------------------
 
         owner_chat_id = DATA.get(
             "owner_chat_id"
@@ -579,9 +942,7 @@ async def create_user(
 
         if (
             owner_chat_id
-            and not is_owner(
-                message.from_user
-            )
+            and not is_owner(message.from_user)
         ):
 
             report = (
@@ -592,75 +953,49 @@ async def create_user(
             )
 
             try:
+
                 await bot.send_message(
                     owner_chat_id,
                     report,
                 )
+
             except Exception:
+
                 logger.exception(
                     "Owner report failed"
                 )
 
-    except Exception as error:
+    except Exception as e:
 
         logger.exception(
-            "Create user failed"
+            "Config creation failed"
         )
 
         try:
-            await progress.delete()
+            await status_message.delete()
         except Exception:
             pass
 
         await message.answer(
             "❌ ساخت کانفیگ انجام نشد.\n\n"
-            f"خطا:\n{str(error)[:3000]}",
+            f"خطا:\n{str(e)[:3000]}",
             reply_markup=(
                 owner_keyboard()
-                if is_owner(
-                    message.from_user
-                )
+                if is_owner(message.from_user)
                 else admin_keyboard()
             ),
         )
 
 
 # =========================================================
-# DELETE USER
+# CONFIG LIST
 # =========================================================
 
-async def delete_marzban_user(
-    username: str,
-):
+@dp.message(F.text == "📋 کانفیگ‌های من")
+async def configs(message: Message):
 
-    token = await get_marzban_token()
-
-    response = await marzban_request(
-        "DELETE",
-        f"/api/user/{username}",
-        token,
-    )
-
-    if response.status_code not in (
-        200,
-        204,
-    ):
-
-        raise RuntimeError(
-            f"Delete failed: "
-            f"{response.status_code}\n"
-            f"{response.text[:2000]}"
-        )
-
-
-# =========================================================
-# START
-# =========================================================
-
-@dp.message(CommandStart())
-async def start_handler(
-    message: Message,
-):
+    if not is_admin(message.from_user):
+        return
 
     username = get_username(
         message.from_user
@@ -668,778 +1003,92 @@ async def start_handler(
 
     if is_owner(message.from_user):
 
-        DATA["owner_chat_id"] = (
-            message.chat.id
-        )
-
-        save_data()
-
-        await message.answer(
-            "👑 پنل مالک\n\n"
-            "یکی از گزینه‌ها را انتخاب کنید:",
-            reply_markup=owner_keyboard(),
-        )
-
-        return
-
-    if is_admin(message.from_user):
-
-        await message.answer(
-            "👤 پنل ادمین\n\n"
-            "یکی از گزینه‌ها را انتخاب کنید:",
-            reply_markup=admin_keyboard(),
-        )
-
-        return
-
-    await message.answer(
-        "❌ شما اجازه استفاده از ربات را ندارید."
-    )
-
-
-# =========================================================
-# MAIN MENU
-# =========================================================
-
-@dp.callback_query(
-    F.data == "main_menu"
-)
-async def main_menu(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    if is_owner(
-        callback.from_user
-    ):
-
-        await callback.message.edit_text(
-            "👑 پنل مالک",
-            reply_markup=owner_keyboard(),
-        )
-
-    elif is_admin(
-        callback.from_user
-    ):
-
-        await callback.message.edit_text(
-            "👤 پنل ادمین",
-            reply_markup=admin_keyboard(),
-        )
-
-
-# =========================================================
-# CREATE CONFIG
-# =========================================================
-
-@dp.callback_query(
-    F.data == "create_config"
-)
-async def create_config_start(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    if not is_admin(
-        callback.from_user
-    ):
-        return
-
-    builder = InlineKeyboardBuilder()
-
-    for value in (
-        5,
-        10,
-        20,
-    ):
-
-        builder.button(
-            text=f"{value} GB",
-            callback_data=f"volume:{value}",
-        )
-
-    builder.button(
-        text="✏️ وارد کردن حجم",
-        callback_data="volume:manual",
-    )
-
-    builder.adjust(3, 1)
-
-    await callback.message.edit_text(
-        "📦 حجم درخواستی را انتخاب کنید:",
-        reply_markup=builder.as_markup(),
-    )
-
-
-# =========================================================
-# VOLUME
-# =========================================================
-
-@dp.callback_query(
-    F.data.startswith("volume:")
-)
-async def volume_selected(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    value = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    if value == "manual":
-
-        DATA.setdefault(
-            "states",
-            {},
-        )
-
-        DATA["states"][
-            str(callback.from_user.id)
-        ] = {
-            "step": "manual_volume"
-        }
-
-        save_data()
-
-        await callback.message.edit_text(
-            "📦 حجم درخواستی را وارد کنید:"
-        )
-
-        return
-
-    volume = int(value)
-
-    await show_days(
-        callback.message,
-        volume,
-    )
-
-
-async def show_days(
-    message: Message,
-    volume: int,
-):
-
-    DATA.setdefault(
-        "states",
-        {},
-    )
-
-    # برای callback لازم نیست state را
-    # در پیام ذخیره کنیم؛ در هر حالتی
-    # حجم فعلی را نگه می‌داریم.
-    user_id = (
-        message.chat.id
-    )
-
-    DATA["states"][
-        str(user_id)
-    ] = {
-        "step": "select_days",
-        "volume": volume,
-    }
-
-    save_data()
-
-    builder = InlineKeyboardBuilder()
-
-    for value in (
-        5,
-        10,
-        15,
-        30,
-    ):
-
-        builder.button(
-            text=f"{value} روز",
-            callback_data=f"days:{value}",
-        )
-
-    builder.button(
-        text="✏️ وارد کردن روز",
-        callback_data="days:manual",
-    )
-
-    builder.adjust(2, 2, 1)
-
-    await message.edit_text(
-        "⏳ مدت اعتبار را انتخاب کنید:",
-        reply_markup=builder.as_markup(),
-    )
-
-
-# =========================================================
-# MANUAL VOLUME
-# =========================================================
-
-@dp.message(
-    F.text,
-)
-async def text_handler(
-    message: Message,
-):
-
-    if not is_admin(
-        message.from_user
-    ):
-        return
-
-    user_id = str(
-        message.from_user.id
-    )
-
-    state = DATA.get(
-        "states",
-        {},
-    ).get(
-        user_id
-    )
-
-    if not state:
-        return
-
-    text = (
-        message.text
-        or ""
-    ).strip()
-
-    # =====================================================
-    # MANUAL VOLUME
-    # =====================================================
-
-    if state.get("step") == "manual_volume":
-
-        try:
-            volume = int(text)
-
-            if volume <= 0:
-                raise ValueError
-
-        except ValueError:
-
-            await message.answer(
-                "❌ حجم وارد شده صحیح نیست."
-            )
-
-            return
-
-        await show_days(
-            message,
-            volume,
-        )
-
-        return
-
-    # =====================================================
-    # MANUAL DAYS
-    # =====================================================
-
-    if state.get("step") == "manual_days":
-
-        try:
-            days = int(text)
-
-            if days <= 0:
-                raise ValueError
-
-        except ValueError:
-
-            await message.answer(
-                "❌ تعداد روز وارد شده صحیح نیست."
-            )
-
-            return
-
-        volume = int(
-            state["volume"]
-        )
-
-        DATA["states"].pop(
-            user_id,
-            None,
-        )
-
-        save_data()
-
-        await create_user(
-            message,
-            volume,
-            days,
-        )
-
-
-# =========================================================
-# DAYS
-# =========================================================
-
-@dp.callback_query(
-    F.data.startswith("days:")
-)
-async def days_selected(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    user_id = str(
-        callback.from_user.id
-    )
-
-    state = DATA.get(
-        "states",
-        {},
-    ).get(
-        user_id
-    )
-
-    if not state:
-        await callback.message.answer(
-            "❌ نشست ساخت کانفیگ منقضی شده است."
-        )
-        return
-
-    volume = int(
-        state["volume"]
-    )
-
-    value = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    if value == "manual":
-
-        DATA["states"][
-            user_id
-        ] = {
-            "step": "manual_days",
-            "volume": volume,
-        }
-
-        save_data()
-
-        await callback.message.edit_text(
-            "⏳ مدت اعتبار درخواستی را وارد کنید:"
-        )
-
-        return
-
-    days = int(value)
-
-    DATA["states"].pop(
-        user_id,
-        None,
-    )
-
-    save_data()
-
-    await create_user(
-        callback.message,
-        volume,
-        days,
-    )
-
-
-# =========================================================
-# MY CONFIGS
-# =========================================================
-
-@dp.callback_query(
-    F.data == "my_configs"
-)
-async def my_configs(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    username = get_username(
-        callback.from_user
-    )
-
-    users = []
-
-    if is_owner(
-        callback.from_user
-    ):
-
-        for owner, items in DATA.get(
-            "created_users",
-            {},
+        all_users = []
+
+        for owner, users in DATA.get(
+            "users",
+            {}
         ).items():
 
-            for user in items:
+            for user in users:
 
-                users.append(
-                    (
-                        owner,
-                        user,
-                    )
+                all_users.append(
+                    (owner, user)
                 )
+
+        if not all_users:
+
+            await message.answer(
+                "📭 هیچ کانفیگی ساخته نشده است.",
+                reply_markup=owner_keyboard(),
+            )
+
+            return
+
+        text = "📋 کانفیگ‌ها:\n\n"
+
+        for owner, user in all_users:
+
+            text += (
+                f"👤 {user}\n"
+                f"سازنده: @{owner}\n\n"
+            )
 
     else:
 
-        for user in DATA.get(
-            "created_users",
-            {},
+        users = DATA.get(
+            "users",
+            {}
         ).get(
             username,
-            [],
-        ):
+            []
+        )
 
-            users.append(
-                (
-                    username,
-                    user,
-                )
+        if not users:
+
+            await message.answer(
+                "📭 هنوز کانفیگی نساخته‌اید.",
+                reply_markup=admin_keyboard(),
             )
 
-    if not users:
+            return
 
-        await callback.message.edit_text(
-            "📭 کانفیگی پیدا نشد.",
-            reply_markup=(
-                owner_keyboard()
-                if is_owner(
-                    callback.from_user
-                )
-                else admin_keyboard()
-            ),
-        )
+        text = "📋 کانفیگ‌های شما:\n\n"
 
-        return
+        for user in users:
 
-    builder = InlineKeyboardBuilder()
-
-    for owner, user in users:
-
-        if is_owner(
-            callback.from_user
-        ):
-
-            text = (
-                f"👤 {user} "
-                f"• @{owner}"
+            text += (
+                f"👤 {user}\n"
             )
 
-        else:
-
-            text = f"👤 {user}"
-
-        builder.button(
-            text=text,
-            callback_data=f"config:{user}",
+        text += (
+            "\nبرای حذف یک کانفیگ، "
+            "نام کاربر را ارسال کنید."
         )
 
-    builder.adjust(1)
-
-    builder.row(
-        InlineKeyboardButton(
-            text="🔙 بازگشت",
-            callback_data="main_menu",
-        )
+    await message.answer(
+        text,
+        reply_markup=(
+            owner_keyboard()
+            if is_owner(message.from_user)
+            else admin_keyboard()
+        ),
     )
-
-    await callback.message.edit_text(
-        "📋 کانفیگ‌ها:",
-        reply_markup=builder.as_markup(),
-    )
-
-
-# =========================================================
-# CONFIG DETAILS
-# =========================================================
-
-@dp.callback_query(
-    F.data.startswith("config:")
-)
-async def config_details(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    username = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    owner_of_user = None
-
-    for owner, users in DATA.get(
-        "created_users",
-        {},
-    ).items():
-
-        if username in users:
-            owner_of_user = owner
-            break
-
-    if not owner_of_user:
-        await callback.message.answer(
-            "❌ کانفیگ پیدا نشد."
-        )
-        return
-
-    if (
-        not is_owner(
-            callback.from_user
-        )
-        and owner_of_user
-        != get_username(
-            callback.from_user
-        )
-    ):
-
-        await callback.answer(
-            "❌ دسترسی ندارید.",
-            show_alert=True,
-        )
-
-        return
-
-    builder = InlineKeyboardBuilder()
-
-    builder.button(
-        text="🗑 حذف کانفیگ",
-        callback_data=f"delete:{username}",
-    )
-
-    builder.button(
-        text="🔙 بازگشت",
-        callback_data="my_configs",
-    )
-
-    builder.adjust(1)
-
-    await callback.message.edit_text(
-        f"👤 کاربر:\n{username}\n\n"
-        "مدیریت کانفیگ:",
-        reply_markup=builder.as_markup(),
-    )
-
-
-# =========================================================
-# DELETE CONFIRM
-# =========================================================
-
-@dp.callback_query(
-    F.data.startswith("delete:")
-)
-async def delete_confirm(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    username = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    owner_of_user = None
-
-    for owner, users in DATA.get(
-        "created_users",
-        {},
-    ).items():
-
-        if username in users:
-
-            owner_of_user = owner
-            break
-
-    if not owner_of_user:
-        await callback.message.answer(
-            "❌ کانفیگ پیدا نشد."
-        )
-        return
-
-    if (
-        not is_owner(
-            callback.from_user
-        )
-        and owner_of_user
-        != get_username(
-            callback.from_user
-        )
-    ):
-
-        await callback.answer(
-            "❌ اجازه حذف این کانفیگ را ندارید.",
-            show_alert=True,
-        )
-
-        return
-
-    builder = InlineKeyboardBuilder()
-
-    builder.row(
-        InlineKeyboardButton(
-            text="✅ بله، حذف شود",
-            callback_data=f"delete_yes:{username}",
-        )
-    )
-
-    builder.row(
-        InlineKeyboardButton(
-            text="❌ لغو",
-            callback_data=f"config:{username}",
-        )
-    )
-
-    await callback.message.edit_text(
-        f"⚠️ حذف کانفیگ:\n\n"
-        f"{username}\n\n"
-        "مطمئن هستید؟",
-        reply_markup=builder.as_markup(),
-    )
-
-
-# =========================================================
-# DELETE
-# =========================================================
-
-@dp.callback_query(
-    F.data.startswith("delete_yes:")
-)
-async def delete_user(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    username = callback.data.split(
-        ":",
-        1,
-    )[1]
-
-    owner_of_user = None
-
-    for owner, users in DATA.get(
-        "created_users",
-        {},
-    ).items():
-
-        if username in users:
-
-            owner_of_user = owner
-            break
-
-    if not owner_of_user:
-        await callback.message.answer(
-            "❌ کانفیگ پیدا نشد."
-        )
-        return
-
-    if (
-        not is_owner(
-            callback.from_user
-        )
-        and owner_of_user
-        != get_username(
-            callback.from_user
-        )
-    ):
-
-        await callback.answer(
-            "❌ اجازه حذف این کانفیگ را ندارید.",
-            show_alert=True,
-        )
-
-        return
-
-    try:
-
-        await delete_marzban_user(
-            username
-        )
-
-        DATA[
-            "created_users"
-        ][owner_of_user].remove(
-            username
-        )
-
-        if not DATA[
-            "created_users"
-        ][owner_of_user]:
-
-            del DATA[
-                "created_users"
-            ][owner_of_user]
-
-        save_data()
-
-        await callback.message.edit_text(
-            "✅ کانفیگ حذف شد.",
-            reply_markup=(
-                owner_keyboard()
-                if is_owner(
-                    callback.from_user
-                )
-                else admin_keyboard()
-            ),
-        )
-
-    except Exception as e:
-
-        await callback.message.edit_text(
-            "❌ حذف کانفیگ انجام نشد.\n\n"
-            f"{str(e)[:2000]}"
-        )
 
 
 # =========================================================
 # ADMIN MANAGEMENT
 # =========================================================
 
-@dp.callback_query(
-    F.data == "manage_admins"
-)
-async def manage_admins(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "👥 مدیریت ادمین‌ها")
+async def admin_management(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
-    builder = InlineKeyboardBuilder()
-
-    builder.button(
-        text="➕ اضافه کردن ادمین",
-        callback_data="admin_add",
-    )
-
-    builder.button(
-        text="🗑 حذف ادمین",
-        callback_data="admin_remove",
-    )
-
-    builder.button(
-        text="📋 لیست ادمین‌ها",
-        callback_data="admin_list",
-    )
-
-    builder.button(
-        text="🔙 بازگشت",
-        callback_data="main_menu",
-    )
-
-    builder.adjust(1)
-
-    await callback.message.edit_text(
+    await message.answer(
         "👥 مدیریت ادمین‌ها:",
-        reply_markup=builder.as_markup(),
+        reply_markup=admin_management_keyboard(),
     )
 
 
@@ -1447,35 +1096,22 @@ async def manage_admins(
 # ADD ADMIN
 # =========================================================
 
-@dp.callback_query(
-    F.data == "admin_add"
-)
-async def admin_add(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "➕ اضافه کردن ادمین")
+async def add_admin_start(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
-    DATA.setdefault(
-        "states",
-        {},
+    set_state(
+        message.from_user.id,
+        {
+            "step": "add_admin",
+        },
     )
 
-    DATA["states"][
-        str(callback.from_user.id)
-    ] = {
-        "step": "add_admin"
-    }
-
-    save_data()
-
-    await callback.message.edit_text(
-        "👤 یوزرنیم ادمین را وارد کنید:"
+    await message.answer(
+        "👤 یوزرنیم ادمین را وارد کنید.\n\n"
+        "مثلاً فقط Username را ارسال کنید.",
     )
 
 
@@ -1483,97 +1119,46 @@ async def admin_add(
 # REMOVE ADMIN
 # =========================================================
 
-@dp.callback_query(
-    F.data == "admin_remove"
-)
-async def admin_remove(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "🗑 حذف ادمین")
+async def remove_admin_start(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
     admins = DATA.get(
         "admins",
-        [],
+        []
     )
 
     if not admins:
 
-        await callback.message.edit_text(
-            "📭 ادمینی وجود ندارد.",
-            reply_markup=owner_keyboard(),
+        await message.answer(
+            "📭 هیچ ادمینی وجود ندارد.",
+            reply_markup=admin_management_keyboard(),
         )
 
         return
 
-    builder = InlineKeyboardBuilder()
-
-    for admin in admins:
-
-        builder.button(
-            text=f"🗑 @{admin}",
-            callback_data=f"remove_admin:{admin}",
+    text = (
+        "👥 ادمین‌های فعلی:\n\n"
+        + "\n".join(
+            f"• @{x}"
+            for x in admins
         )
-
-    builder.button(
-        text="🔙 بازگشت",
-        callback_data="manage_admins",
+        + "\n\n"
+        "برای حذف، Username ادمین را ارسال کنید."
     )
 
-    builder.adjust(1)
-
-    await callback.message.edit_text(
-        "ادمین مورد نظر را انتخاب کنید:",
-        reply_markup=builder.as_markup(),
+    set_state(
+        message.from_user.id,
+        {
+            "step": "remove_admin",
+        },
     )
 
-
-@dp.callback_query(
-    F.data.startswith("remove_admin:")
-)
-async def remove_admin(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
-        return
-
-    admin = normalize_username(
-        callback.data.split(
-            ":",
-            1,
-        )[1]
-    )
-
-    if admin in [
-        normalize_username(x)
-        for x in DATA.get(
-            "admins",
-            [],
-        )
-    ]:
-
-        DATA["admins"] = [
-            x
-            for x in DATA["admins"]
-            if normalize_username(x)
-            != admin
-        ]
-
-        save_data()
-
-    await callback.message.edit_text(
-        f"✅ @{admin} حذف شد.",
-        reply_markup=owner_keyboard(),
+    await message.answer(
+        text,
+        reply_markup=admin_management_keyboard(),
     )
 
 
@@ -1581,51 +1166,311 @@ async def remove_admin(
 # ADMIN LIST
 # =========================================================
 
-@dp.callback_query(
-    F.data == "admin_list"
-)
-async def admin_list(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "📋 لیست ادمین‌ها")
+async def admin_list(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
     admins = DATA.get(
         "admins",
-        [],
+        []
     )
 
     if not admins:
 
-        text = (
-            "📭 هیچ ادمینی وجود ندارد."
-        )
+        text = "📭 هیچ ادمینی وجود ندارد."
 
     else:
 
         text = (
-            "👥 ادمین‌ها:\n\n"
+            "👥 لیست ادمین‌ها:\n\n"
             + "\n".join(
                 f"• @{x}"
                 for x in admins
             )
         )
 
-    builder = InlineKeyboardBuilder()
-
-    builder.button(
-        text="🔙 بازگشت",
-        callback_data="manage_admins",
+    await message.answer(
+        text,
+        reply_markup=admin_management_keyboard(),
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=builder.as_markup(),
+
+# =========================================================
+# ADMIN TEXT STATES
+# =========================================================
+
+@dp.message(F.text)
+async def text_states(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state:
+        return
+
+    step = state.get("step")
+
+    text = (
+        message.text or ""
+    ).strip()
+
+    # -----------------------------------------------------
+    # ADD ADMIN
+    # -----------------------------------------------------
+
+    if step == "add_admin":
+
+        username = clean_username(text)
+
+        if not username:
+
+            await message.answer(
+                "❌ Username معتبر نیست."
+            )
+
+            return
+
+        if username == OWNER_USERNAME:
+
+            await message.answer(
+                "❌ مالک را نمی‌توان به عنوان ادمین اضافه کرد."
+            )
+
+            return
+
+        admins = [
+            clean_username(x)
+            for x in DATA.get(
+                "admins",
+                []
+            )
+        ]
+
+        if username in admins:
+
+            await message.answer(
+                "⚠️ این کاربر از قبل ادمین است."
+            )
+
+            clear_state(
+                message.from_user.id
+            )
+
+            return
+
+        DATA["admins"].append(
+            username
+        )
+
+        clear_state(
+            message.from_user.id
+        )
+
+        save_data()
+
+        await message.answer(
+            f"✅ @{username} اضافه شد.",
+            reply_markup=admin_management_keyboard(),
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # REMOVE ADMIN
+    # -----------------------------------------------------
+
+    if step == "remove_admin":
+
+        username = clean_username(text)
+
+        admins = DATA.get(
+            "admins",
+            []
+        )
+
+        found = None
+
+        for admin in admins:
+
+            if clean_username(admin) == username:
+                found = admin
+                break
+
+        if not found:
+
+            await message.answer(
+                "❌ این Username در لیست ادمین‌ها نیست."
+            )
+
+            return
+
+        DATA["admins"].remove(
+            found
+        )
+
+        clear_state(
+            message.from_user.id
+        )
+
+        save_data()
+
+        await message.answer(
+            f"✅ @{username} حذف شد.",
+            reply_markup=admin_management_keyboard(),
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # DELETE CONFIG BY USERNAME
+    # -----------------------------------------------------
+
+    if step == "delete_config":
+
+        await delete_user_by_name(
+            message,
+            text,
+        )
+
+        return
+
+
+# =========================================================
+# DELETE CONFIG
+# =========================================================
+
+async def delete_user_by_name(
+    message,
+    username,
+):
+
+    username = username.strip()
+
+    creator = get_username(
+        message.from_user
+    )
+
+    owner_of_user = None
+
+    for owner, users in DATA.get(
+        "users",
+        {}
+    ).items():
+
+        if username in users:
+
+            owner_of_user = owner
+            break
+
+    if not owner_of_user:
+
+        await message.answer(
+            "❌ این کانفیگ پیدا نشد."
+        )
+
+        return
+
+    if (
+        not is_owner(message.from_user)
+        and owner_of_user != creator
+    ):
+
+        await message.answer(
+            "❌ شما فقط می‌توانید کانفیگ‌های خودتان را حذف کنید."
+        )
+
+        return
+
+    try:
+
+        token = await get_marzban_token()
+
+        response = await marzban_request(
+            "DELETE",
+            f"/api/user/{username}",
+            token,
+        )
+
+        if response.status_code not in (
+            200,
+            204,
+        ):
+
+            raise RuntimeError(
+                f"{response.status_code}\n"
+                f"{response.text[:2000]}"
+            )
+
+        DATA["users"][
+            owner_of_user
+        ].remove(
+            username
+        )
+
+        if not DATA["users"][
+            owner_of_user
+        ]:
+
+            del DATA["users"][
+                owner_of_user
+            ]
+
+        clear_state(
+            message.from_user.id
+        )
+
+        save_data()
+
+        await message.answer(
+            "✅ کانفیگ حذف شد.",
+            reply_markup=(
+                owner_keyboard()
+                if is_owner(message.from_user)
+                else admin_keyboard()
+            ),
+        )
+
+    except Exception as e:
+
+        await message.answer(
+            "❌ حذف کانفیگ انجام نشد.\n\n"
+            f"{str(e)[:2000]}"
+        )
+
+
+# =========================================================
+# START DELETE CONFIG
+# =========================================================
+
+@dp.message(
+    F.text.regexp(r"^حذف\s+.+$")
+)
+async def delete_command(message: Message):
+
+    if not is_admin(message.from_user):
+        return
+
+    username = message.text.split(
+        None,
+        1,
+    )[1].strip()
+
+    set_state(
+        message.from_user.id,
+        {
+            "step": "delete_config",
+        },
+    )
+
+    await delete_user_by_name(
+        message,
+        username,
     )
 
 
@@ -1633,85 +1478,41 @@ async def admin_list(
 # BACKUP MENU
 # =========================================================
 
-@dp.callback_query(
-    F.data == "backup_menu"
-)
-async def backup_menu(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "💾 بک‌آپ")
+async def backup_menu(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
-    builder = InlineKeyboardBuilder()
-
-    builder.button(
-        text="📤 دریافت بک‌آپ",
-        callback_data="backup_download",
-    )
-
-    builder.button(
-        text="📥 آپلود بک‌آپ",
-        callback_data="backup_upload",
-    )
-
-    builder.button(
-        text="🔙 بازگشت",
-        callback_data="main_menu",
-    )
-
-    builder.adjust(1)
-
-    await callback.message.edit_text(
+    await message.answer(
         "💾 مدیریت بک‌آپ:",
-        reply_markup=builder.as_markup(),
+        reply_markup=backup_keyboard(),
     )
 
 
 # =========================================================
-# DOWNLOAD BACKUP
+# CREATE BACKUP
 # =========================================================
 
-@dp.callback_query(
-    F.data == "backup_download"
-)
-async def backup_download(
-    callback: CallbackQuery,
-):
-
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
-        return
+def create_backup_file(prefix="backup"):
 
     filename = (
-        "backup_"
-        + datetime.now().strftime(
-            "%Y-%m-%d_%H-%M-%S"
-        )
-        + ".json"
+        f"{prefix}_"
+        f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        f".json"
     )
 
-    path = (
-        BACKUP_DIR
-        / filename
-    )
+    path = BACKUP_DIR / filename
 
     backup = {
         "created_at": datetime.now().isoformat(),
         "admins": DATA.get(
             "admins",
-            [],
+            []
         ),
-        "created_users": DATA.get(
-            "created_users",
-            {},
+        "users": DATA.get(
+            "users",
+            {}
         ),
     }
 
@@ -1728,14 +1529,30 @@ async def backup_download(
             indent=2,
         )
 
+    return path
+
+
+# =========================================================
+# DOWNLOAD BACKUP
+# =========================================================
+
+@dp.message(F.text == "📤 دریافت بک‌آپ")
+async def download_backup(message: Message):
+
+    if not is_owner(message.from_user):
+        return
+
+    path = create_backup_file()
+
     document = BufferedInputFile(
         path.read_bytes(),
-        filename=filename,
+        filename=path.name,
     )
 
-    await callback.message.answer_document(
+    await message.answer_document(
         document=document,
         caption="💾 بک‌آپ ربات",
+        reply_markup=backup_keyboard(),
     )
 
 
@@ -1743,80 +1560,48 @@ async def backup_download(
 # UPLOAD BACKUP
 # =========================================================
 
-@dp.callback_query(
-    F.data == "backup_upload"
-)
-async def backup_upload(
-    callback: CallbackQuery,
-):
+@dp.message(F.text == "📥 آپلود بک‌آپ")
+async def upload_backup_start(message: Message):
 
-    await callback.answer()
-
-    if not is_owner(
-        callback.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
-    DATA.setdefault(
-        "states",
-        {},
+    set_state(
+        message.from_user.id,
+        {
+            "step": "upload_backup",
+        },
     )
 
-    DATA["states"][
-        str(callback.from_user.id)
-    ] = {
-        "step": "upload_backup"
-    }
-
-    save_data()
-
-    await callback.message.edit_text(
-        "📥 فایل JSON بک‌آپ را ارسال کنید."
+    await message.answer(
+        "📥 فایل JSON بک‌آپ را ارسال کنید.",
+        reply_markup=backup_keyboard(),
     )
 
 
 # =========================================================
-# DOCUMENT HANDLER
+# BACKUP DOCUMENT
 # =========================================================
 
-@dp.message(
-    F.document
-)
-async def document_handler(
-    message: Message,
-):
+@dp.message(F.document)
+async def backup_document(message: Message):
 
-    if not is_owner(
-        message.from_user
-    ):
+    if not is_owner(message.from_user):
         return
 
-    user_id = str(
+    state = get_state(
         message.from_user.id
-    )
-
-    state = DATA.get(
-        "states",
-        {},
-    ).get(
-        user_id
     )
 
     if not state:
         return
 
-    if state.get(
-        "step"
-    ) != "upload_backup":
+    if state.get("step") != "upload_backup":
         return
 
-    document: Document = (
-        message.document
-    )
+    document = message.document
 
-    if not document.file_name.lower().endswith(
-        ".json"
-    ):
+    if not document.file_name.lower().endswith(".json"):
 
         await message.answer(
             "❌ فقط فایل JSON قابل قبول است."
@@ -1824,63 +1609,51 @@ async def document_handler(
 
         return
 
-    file = await bot.get_file(
-        document.file_id
-    )
-
-    buffer = BytesIO()
-
-    await bot.download_file(
-        file.file_path,
-        buffer,
-    )
-
-    buffer.seek(0)
-
     try:
 
-        backup = json.loads(
+        file = await bot.get_file(
+            document.file_id
+        )
+
+        buffer = BytesIO()
+
+        await bot.download_file(
+            file.file_path,
+            buffer,
+        )
+
+        buffer.seek(0)
+
+        data = json.loads(
             buffer.read().decode(
                 "utf-8"
             )
         )
 
-        if not isinstance(
-            backup,
-            dict,
-        ):
+        if not isinstance(data, dict):
             raise ValueError
 
-        admins = backup.get(
+        admins = data.get(
             "admins",
-            [],
+            []
         )
 
-        created_users = backup.get(
-            "created_users",
-            {},
+        users = data.get(
+            "users",
+            {}
         )
 
-        if not isinstance(
-            admins,
-            list,
-        ):
+        if not isinstance(admins, list):
             raise ValueError
 
-        if not isinstance(
-            created_users,
-            dict,
-        ):
+        if not isinstance(users, dict):
             raise ValueError
 
         DATA["admins"] = admins
-        DATA[
-            "created_users"
-        ] = created_users
+        DATA["users"] = users
 
-        DATA["states"].pop(
-            user_id,
-            None,
+        clear_state(
+            message.from_user.id
         )
 
         save_data()
@@ -1892,101 +1665,36 @@ async def document_handler(
 
     except Exception:
 
+        logger.exception(
+            "Backup restore failed"
+        )
+
         await message.answer(
             "❌ فایل بک‌آپ معتبر نیست."
         )
 
 
 # =========================================================
-# ADD ADMIN TEXT
-# =========================================================
-
-async def handle_admin_text(
-    message: Message,
-    state: dict,
-):
-
-    admin = normalize_username(
-        message.text
-    )
-
-    if not admin:
-
-        await message.answer(
-            "❌ یوزرنیم معتبر نیست."
-        )
-
-        return
-
-    if admin == OWNER_USERNAME:
-
-        await message.answer(
-            "❌ مالک نمی‌تواند به عنوان ادمین اضافه شود."
-        )
-
-        return
-
-    if admin not in [
-        normalize_username(x)
-        for x in DATA.get(
-            "admins",
-            [],
-        )
-    ]:
-
-        DATA["admins"].append(
-            admin
-        )
-
-    DATA["states"].pop(
-        str(message.from_user.id),
-        None,
-    )
-
-    save_data()
-
-    await message.answer(
-        f"✅ @{admin} به ادمین‌ها اضافه شد.",
-        reply_markup=owner_keyboard(),
-    )
-
-
-# =========================================================
-# PATCH TEXT HANDLER FOR ADMIN STATE
-# =========================================================
-
-_original_text_handler = text_handler
-
-
-# =========================================================
 # NIGHTLY BACKUP
 # =========================================================
 
-async def send_nightly_backup():
+async def nightly_backup():
 
     while True:
 
         now = datetime.now()
 
-        next_midnight = (
-            now.replace(
-                hour=0,
-                minute=0,
-                second=0,
-                microsecond=0,
-            )
+        tomorrow = (
+            now + timedelta(days=1)
+        ).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
 
-        if next_midnight <= now:
-
-            from datetime import timedelta
-
-            next_midnight += timedelta(
-                days=1
-            )
-
         seconds = (
-            next_midnight - now
+            tomorrow - now
         ).total_seconds()
 
         await asyncio.sleep(
@@ -1995,43 +1703,9 @@ async def send_nightly_backup():
 
         try:
 
-            filename = (
-                "auto_backup_"
-                + datetime.now().strftime(
-                    "%Y-%m-%d_%H-%M-%S"
-                )
-                + ".json"
+            path = create_backup_file(
+                prefix="auto_backup"
             )
-
-            path = (
-                BACKUP_DIR
-                / filename
-            )
-
-            backup = {
-                "created_at": datetime.now().isoformat(),
-                "admins": DATA.get(
-                    "admins",
-                    [],
-                ),
-                "created_users": DATA.get(
-                    "created_users",
-                    {},
-                ),
-            }
-
-            with open(
-                path,
-                "w",
-                encoding="utf-8",
-            ) as f:
-
-                json.dump(
-                    backup,
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
 
             owner_chat_id = DATA.get(
                 "owner_chat_id"
@@ -2041,141 +1715,64 @@ async def send_nightly_backup():
 
                 document = BufferedInputFile(
                     path.read_bytes(),
-                    filename=filename,
+                    filename=path.name,
                 )
 
                 await bot.send_document(
                     owner_chat_id,
                     document=document,
-                    caption="🌙 بک‌آپ خودکار نیمه‌شب",
+                    caption="🌙 بک‌آپ خودکار شبانه",
+                )
+
+                logger.info(
+                    "Nightly backup sent."
                 )
 
         except Exception:
 
             logger.exception(
-                "Nightly backup failed"
+                "Nightly backup failed."
             )
 
-        await asyncio.sleep(
-            5
-        )
+        await asyncio.sleep(5)
 
 
 # =========================================================
-# FIX STATE HANDLER
+# UNKNOWN TEXT
 # =========================================================
 
 @dp.message(F.text)
-async def state_router(
-    message: Message,
-):
+async def unknown_message(message: Message):
 
-    if not is_admin(
-        message.from_user
-    ):
+    if not is_admin(message.from_user):
         return
 
-    user_id = str(
+    # اگر پیام توسط state handler پردازش شده،
+    # اینجا چیزی ارسال نمی‌کنیم.
+    state = get_state(
         message.from_user.id
     )
 
-    state = DATA.get(
-        "states",
-        {},
-    ).get(
-        user_id
-    )
-
-    if not state:
+    if state:
         return
 
-    step = state.get(
-        "step"
-    )
+    if is_owner(message.from_user):
 
-    if step == "add_admin":
-
-        await handle_admin_text(
-            message,
-            state,
+        await message.answer(
+            "از دکمه‌های پایین استفاده کنید.",
+            reply_markup=owner_keyboard(),
         )
 
-        return
+    else:
 
-    # اگر handler ساخت کانفیگ قبلی
-    # این پیام را قبلاً پردازش کرده باشد،
-    # اینجا کاری نمی‌کنیم.
-    if step in (
-        "manual_volume",
-        "manual_days",
-    ):
-
-        text = (
-            message.text
-            or ""
-        ).strip()
-
-        if step == "manual_volume":
-
-            try:
-
-                volume = int(text)
-
-                if volume <= 0:
-                    raise ValueError
-
-            except ValueError:
-
-                await message.answer(
-                    "❌ حجم وارد شده صحیح نیست."
-                )
-
-                return
-
-            await show_days(
-                message,
-                volume,
-            )
-
-            return
-
-        if step == "manual_days":
-
-            try:
-
-                days = int(text)
-
-                if days <= 0:
-                    raise ValueError
-
-            except ValueError:
-
-                await message.answer(
-                    "❌ تعداد روز وارد شده صحیح نیست."
-                )
-
-                return
-
-            volume = int(
-                state["volume"]
-            )
-
-            DATA["states"].pop(
-                user_id,
-                None,
-            )
-
-            save_data()
-
-            await create_user(
-                message,
-                volume,
-                days,
-            )
+        await message.answer(
+            "از دکمه‌های پایین استفاده کنید.",
+            reply_markup=admin_keyboard(),
+        )
 
 
 # =========================================================
-# STARTUP
+# MAIN
 # =========================================================
 
 async def main():
@@ -2184,7 +1781,6 @@ async def main():
         "Bot starting..."
     )
 
-    # تست اتصال به Marzban
     try:
 
         await get_marzban_token()
@@ -2196,17 +1792,16 @@ async def main():
     except Exception as e:
 
         logger.error(
-            "Marzban API test failed: %s",
+            "Marzban connection failed: %s",
             e,
         )
 
     asyncio.create_task(
-        send_nightly_backup()
+        nightly_backup()
     )
 
     await dp.start_polling(
-        bot,
-        allowed_updates=dp.resolve_used_update_types(),
+        bot
     )
 
 
