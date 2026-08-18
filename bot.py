@@ -3,8 +3,8 @@ import json
 import time
 import uuid
 import secrets
-import logging
 import asyncio
+import logging
 from pathlib import Path
 from io import BytesIO
 from datetime import datetime
@@ -36,7 +36,7 @@ MARZBAN_URL = "https://panell.goat-hs.online"
 MARZBAN_USERNAME = "amirhszz"
 MARZBAN_PASSWORD = "amirhszz"
 
-OWNER_USERNAME = "parsa9599"
+OWNER_USERNAME = "amirhszz"
 
 DATA_FILE = Path("bot_data.json")
 
@@ -104,16 +104,13 @@ DATA = load_data()
 
 
 def save_data():
-    temp_file = Path(
-        "bot_data.tmp.json"
-    )
+    temp_file = Path("bot_data.tmp.json")
 
     with open(
         temp_file,
         "w",
         encoding="utf-8",
     ) as f:
-
         json.dump(
             DATA,
             f,
@@ -136,7 +133,6 @@ USER_STATE = {}
 # =========================================================
 
 def get_username(user):
-
     if not user:
         return ""
 
@@ -147,7 +143,6 @@ def get_username(user):
 
 
 def is_owner(user):
-
     return (
         get_username(user)
         == OWNER_USERNAME.lower()
@@ -155,7 +150,6 @@ def is_owner(user):
 
 
 def is_admin(user):
-
     username = get_username(user)
 
     if not username:
@@ -168,7 +162,6 @@ def is_admin(user):
 
 
 def can_create(user):
-
     return is_owner(user) or is_admin(user)
 
 
@@ -177,7 +170,6 @@ def can_create(user):
 # =========================================================
 
 def owner_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -205,7 +197,6 @@ def owner_keyboard():
 
 
 def admin_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -225,7 +216,6 @@ def admin_keyboard():
 
 
 def cancel_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -240,7 +230,6 @@ def cancel_keyboard():
 
 
 def volume_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -260,7 +249,6 @@ def volume_keyboard():
 
 
 def days_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -283,7 +271,6 @@ def days_keyboard():
 
 
 def backup_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -306,7 +293,6 @@ def backup_keyboard():
 
 
 def admin_management_keyboard():
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [
@@ -334,11 +320,9 @@ def admin_management_keyboard():
 
 
 def remove_admin_keyboard():
-
     buttons = []
 
     for username in DATA["admins"]:
-
         buttons.append(
             [
                 KeyboardButton(
@@ -362,11 +346,9 @@ def remove_admin_keyboard():
 
 
 def remove_user_keyboard(users):
-
     buttons = []
 
     for username in users:
-
         buttons.append(
             [
                 KeyboardButton(
@@ -390,7 +372,7 @@ def remove_user_keyboard(users):
 
 
 # =========================================================
-# MARZBAN TOKEN
+# MARZBAN LOGIN
 # =========================================================
 
 async def get_marzban_token():
@@ -420,7 +402,6 @@ async def get_marzban_token():
         )
 
     if response.status_code != 200:
-
         raise RuntimeError(
             "ورود به Marzban ناموفق بود.\n"
             f"HTTP {response.status_code}\n"
@@ -434,7 +415,6 @@ async def get_marzban_token():
     )
 
     if not token:
-
         raise RuntimeError(
             "Marzban توکن دسترسی برنگرداند."
         )
@@ -479,6 +459,100 @@ async def marzban_request(
 
 
 # =========================================================
+# GET INBOUNDS
+# =========================================================
+
+async def get_active_inbounds(token):
+
+    response = await marzban_request(
+        "GET",
+        "/api/inbounds",
+        token,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "دریافت Inbound ها ناموفق بود.\n"
+            f"HTTP {response.status_code}\n"
+            f"{response.text[:2000]}"
+        )
+
+    data = response.json()
+
+    if isinstance(data, dict):
+
+        inbounds = (
+            data.get("inbounds")
+            or data.get("items")
+            or data.get("data")
+            or []
+        )
+
+    elif isinstance(data, list):
+
+        inbounds = data
+
+    else:
+
+        inbounds = []
+
+    return inbounds
+
+
+# =========================================================
+# BUILD INBOUND MAP
+# =========================================================
+
+def build_inbound_map(inbounds):
+
+    result = {}
+
+    for inbound in inbounds:
+
+        if not isinstance(
+            inbound,
+            dict,
+        ):
+            continue
+
+        tag = (
+            inbound.get("tag")
+            or inbound.get("name")
+        )
+
+        protocol = (
+            inbound.get("protocol")
+            or inbound.get("type")
+        )
+
+        if not tag or not protocol:
+            continue
+
+        protocol = str(
+            protocol
+        ).lower()
+
+        if protocol not in (
+            "vless",
+            "vmess",
+            "trojan",
+            "shadowsocks",
+        ):
+            continue
+
+        result.setdefault(
+            protocol,
+            [],
+        )
+
+        result[protocol].append(
+            tag
+        )
+
+    return result
+
+
+# =========================================================
 # SUBSCRIPTION URL
 # =========================================================
 
@@ -502,11 +576,11 @@ def build_subscription_url(
             "https://"
         )
     ):
-
         return subscription_url
 
-    if subscription_url.startswith("/"):
-
+    if subscription_url.startswith(
+        "/"
+    ):
         return (
             MARZBAN_URL.rstrip("/")
             + subscription_url
@@ -520,7 +594,7 @@ def build_subscription_url(
 
 
 # =========================================================
-# QR CODE
+# QR
 # =========================================================
 
 def make_qr_code(
@@ -573,15 +647,11 @@ def create_backup_bytes():
         "data": DATA,
     }
 
-    raw = json.dumps(
+    return json.dumps(
         data,
         ensure_ascii=False,
         indent=2,
-    )
-
-    return raw.encode(
-        "utf-8"
-    )
+    ).encode("utf-8")
 
 
 def create_backup_file():
@@ -604,7 +674,7 @@ def create_backup_file():
 
 
 # =========================================================
-# SEND BACKUP TO OWNER
+# AUTOMATIC BACKUP
 # =========================================================
 
 async def send_backup_to_owner(
@@ -616,11 +686,6 @@ async def send_backup_to_owner(
     )
 
     if not owner_chat_id:
-
-        logger.warning(
-            "Owner chat_id is not saved."
-        )
-
         return False
 
     filename, backup_bytes = (
@@ -636,7 +701,6 @@ async def send_backup_to_owner(
 
         caption = (
             "🌙 بک‌آپ خودکار شبانه\n\n"
-            "⏰ ساعت ۰۰:۰۰\n"
             "💾 بک‌آپ ربات آماده شد."
         )
 
@@ -655,10 +719,6 @@ async def send_backup_to_owner(
             caption=caption,
         )
 
-        logger.info(
-            "Backup sent to owner."
-        )
-
         return True
 
     except Exception as e:
@@ -670,14 +730,10 @@ async def send_backup_to_owner(
         return False
 
 
-# =========================================================
-# AUTOMATIC BACKUP
-# =========================================================
-
 async def automatic_backup():
 
     logger.info(
-        "Running automatic backup..."
+        "Running nightly backup..."
     )
 
     await send_backup_to_owner(
@@ -687,10 +743,8 @@ async def automatic_backup():
 
 def start_scheduler():
 
-    scheduler = (
-        AsyncIOScheduler(
-            timezone=TEHRAN
-        )
+    scheduler = AsyncIOScheduler(
+        timezone=TEHRAN
     )
 
     scheduler.add_job(
@@ -705,11 +759,7 @@ def start_scheduler():
     scheduler.start()
 
     logger.info(
-        "Automatic backup scheduler started."
-    )
-
-    logger.info(
-        "Next backup will run at 00:00 Tehran time."
+        "Nightly backup scheduler started."
     )
 
     return scheduler
@@ -736,7 +786,7 @@ async def start(
 
         await message.answer(
             "👑 پنل مالک\n\n"
-            "سلام امیر 👋\n\n"
+            "سلام 👋\n\n"
             "دسترسی کامل فعال است.",
             reply_markup=(
                 owner_keyboard()
@@ -822,17 +872,12 @@ async def backup_menu(
         return
 
     await message.answer(
-        "📦 مدیریت بک‌آپ\n\n"
-        "یکی از گزینه‌ها را انتخاب کنید:",
+        "📦 مدیریت بک‌آپ",
         reply_markup=(
             backup_keyboard()
         ),
     )
 
-
-# =========================================================
-# DOWNLOAD BACKUP
-# =========================================================
 
 @dp.message(
     F.text == "📥 دریافت بک‌آپ"
@@ -846,38 +891,20 @@ async def download_backup(
     ):
         return
 
-    try:
+    filename, backup_bytes = (
+        create_backup_file()
+    )
 
-        filename, backup_bytes = (
-            create_backup_file()
-        )
+    document = BufferedInputFile(
+        backup_bytes,
+        filename=filename,
+    )
 
-        document = BufferedInputFile(
-            backup_bytes,
-            filename=filename,
-        )
+    await message.answer_document(
+        document=document,
+        caption="📥 بک‌آپ آماده شد.",
+    )
 
-        await message.answer_document(
-            document=document,
-            caption=(
-                "📥 بک‌آپ آماده شد."
-            ),
-        )
-
-    except Exception as e:
-
-        logger.error(
-            f"Backup creation error: {e}"
-        )
-
-        await message.answer(
-            "❌ ساخت بک‌آپ انجام نشد."
-        )
-
-
-# =========================================================
-# UPLOAD BACKUP
-# =========================================================
 
 @dp.message(
     F.text == "📤 آپلود بک‌آپ"
@@ -898,19 +925,16 @@ async def upload_backup_start(
     }
 
     await message.answer(
-        "📤 آپلود بک‌آپ\n\n"
-        "فایل JSON بک‌آپ را ارسال کنید.",
+        "📤 فایل JSON بک‌آپ را ارسال کنید.",
         reply_markup=cancel_keyboard(),
     )
 
 
 # =========================================================
-# DOCUMENT HANDLER
+# DOCUMENT
 # =========================================================
 
-@dp.message(
-    F.document
-)
+@dp.message(F.document)
 async def document_handler(
     message: Message
 ):
@@ -930,17 +954,14 @@ async def document_handler(
     if state.get(
         "step"
     ) != "upload_backup":
-
         return
 
-    document = message.document
-
-    if not document.file_name.lower().endswith(
+    if not message.document.file_name.lower().endswith(
         ".json"
     ):
 
         await message.answer(
-            "❌ فقط فایل JSON بک‌آپ قابل قبول است."
+            "❌ فقط فایل JSON قابل قبول است."
         )
 
         return
@@ -948,7 +969,7 @@ async def document_handler(
     try:
 
         file = await bot.get_file(
-            document.file_id
+            message.document.file_id
         )
 
         buffer = BytesIO()
@@ -960,22 +981,11 @@ async def document_handler(
 
         buffer.seek(0)
 
-        raw = buffer.read()
-
         backup = json.loads(
-            raw.decode(
+            buffer.read().decode(
                 "utf-8"
             )
         )
-
-        if not isinstance(
-            backup,
-            dict
-        ):
-
-            raise ValueError(
-                "ساختار فایل صحیح نیست."
-            )
 
         backup_data = backup.get(
             "data"
@@ -983,9 +993,8 @@ async def document_handler(
 
         if not isinstance(
             backup_data,
-            dict
+            dict,
         ):
-
             raise ValueError(
                 "فایل بک‌آپ معتبر نیست."
             )
@@ -1005,26 +1014,17 @@ async def document_handler(
             message.chat.id
         )
 
-        # ---------------------------------------------
-        # قبل از Restore یک بک‌آپ از وضعیت فعلی
-        # در یک فایل محلی نگه می‌داریم.
-        # ---------------------------------------------
-
-        current_backup = (
-            create_backup_bytes()
-        )
-
+        # Backup before restore
         with open(
             "bot_data.before_restore.json",
             "wb",
         ) as f:
 
             f.write(
-                current_backup
+                create_backup_bytes()
             )
 
         DATA.clear()
-
         DATA.update(
             backup_data
         )
@@ -1043,19 +1043,15 @@ async def document_handler(
             ),
         )
 
-        logger.info(
-            "Backup restored successfully."
-        )
-
     except Exception as e:
 
         logger.exception(
-            "Backup restore failed."
+            "Backup restore failed"
         )
 
         await message.answer(
             "❌ بازیابی بک‌آپ انجام نشد.\n\n"
-            f"خطا: {str(e)[:1500]}",
+            f"خطا:\n{str(e)[:1500]}",
             reply_markup=(
                 owner_keyboard()
             ),
@@ -1063,7 +1059,7 @@ async def document_handler(
 
 
 # =========================================================
-# CREATE START
+# CREATE
 # =========================================================
 
 @dp.message(
@@ -1076,11 +1072,6 @@ async def create_start(
     if not can_create(
         message.from_user
     ):
-
-        await message.answer(
-            "⛔️ دسترسی ندارید."
-        )
-
         return
 
     USER_STATE[
@@ -1092,7 +1083,7 @@ async def create_start(
     await message.answer(
         "➕ ساخت کانفیگ\n\n"
         "📦 حجم درخواستی را انتخاب کنید "
-        "یا عدد حجم را وارد کنید:",
+        "یا حجم را وارد کنید:",
         reply_markup=(
             volume_keyboard()
         ),
@@ -1123,10 +1114,6 @@ async def admin_management(
     )
 
 
-# =========================================================
-# ADD ADMIN
-# =========================================================
-
 @dp.message(
     F.text == "➕ افزودن ادمین"
 )
@@ -1146,17 +1133,10 @@ async def add_admin_start(
     }
 
     await message.answer(
-        "➕ افزودن ادمین\n\n"
-        "Username ادمین را وارد کنید:",
-        reply_markup=(
-            cancel_keyboard()
-        ),
+        "➕ Username ادمین را وارد کنید:",
+        reply_markup=cancel_keyboard(),
     )
 
-
-# =========================================================
-# REMOVE ADMIN
-# =========================================================
 
 @dp.message(
     F.text == "🗑 حذف ادمین"
@@ -1208,22 +1188,17 @@ async def remove_admin_confirm(
         .lower()
     )
 
-    if username not in DATA[
-        "admins"
-    ]:
+    if username not in DATA["admins"]:
 
         await message.answer(
-            "❌ این ادمین پیدا نشد.",
-            reply_markup=(
-                admin_management_keyboard()
-            ),
+            "❌ این ادمین پیدا نشد."
         )
 
         return
 
     DATA["admins"].pop(
         username,
-        None,
+        None
     )
 
     save_data()
@@ -1235,10 +1210,6 @@ async def remove_admin_confirm(
         ),
     )
 
-
-# =========================================================
-# LIST ADMINS
-# =========================================================
 
 @dp.message(
     F.text == "📋 لیست ادمین‌ها"
@@ -1258,19 +1229,13 @@ async def list_admins(
         "👤 ادمین‌ها:\n\n"
     )
 
-    if not DATA[
-        "admins"
-    ]:
+    if not DATA["admins"]:
 
-        text += (
-            "هیچ ادمینی ثبت نشده."
-        )
+        text += "هیچ ادمینی ثبت نشده."
 
     else:
 
-        for username in DATA[
-            "admins"
-        ]:
+        for username in DATA["admins"]:
 
             text += (
                 f"• @{username}\n"
@@ -1313,26 +1278,25 @@ async def stats(
         )
 
         if response.status_code != 200:
-
             raise RuntimeError(
                 response.text[:1000]
             )
 
         data = response.json()
 
-        users_list = data.get(
+        users = data.get(
             "users",
-            [],
+            []
         )
 
         total = data.get(
             "total",
-            len(users_list),
+            len(users)
         )
 
         active = sum(
             1
-            for user in users_list
+            for user in users
             if user.get(
                 "status"
             ) == "active"
@@ -1402,8 +1366,7 @@ async def my_users(
         return
 
     await message.answer(
-        "🗑 کانفیگ‌های من\n\n"
-        "کانفیگ موردنظر را انتخاب کنید:",
+        "🗑 کانفیگ موردنظر را انتخاب کنید:",
         reply_markup=(
             remove_user_keyboard(
                 users
@@ -1411,10 +1374,6 @@ async def my_users(
         ),
     )
 
-
-# =========================================================
-# DELETE USER
-# =========================================================
 
 @dp.message(
     F.text.startswith("🗑 u_")
@@ -1448,10 +1407,7 @@ async def delete_user(
     if username not in owned:
 
         await message.answer(
-            "⛔️ این کانفیگ متعلق به شما نیست.",
-            reply_markup=(
-                admin_keyboard()
-            ),
+            "⛔️ این کانفیگ متعلق به شما نیست."
         )
 
         return
@@ -1503,7 +1459,7 @@ async def delete_user(
 
 
 # =========================================================
-# TEXT STATE HANDLER
+# CREATE STATE HANDLER
 # =========================================================
 
 @dp.message(F.text)
@@ -1516,9 +1472,7 @@ async def text_handler(
     ):
         return
 
-    user_id = (
-        message.from_user.id
-    )
+    user_id = message.from_user.id
 
     state = USER_STATE.get(
         user_id
@@ -1532,18 +1486,13 @@ async def text_handler(
         or ""
     ).strip()
 
-    # =====================================================
+    # -----------------------------------------------------
     # ADD ADMIN
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get(
         "step"
     ) == "add_admin":
-
-        if not is_owner(
-            message.from_user
-        ):
-            return
 
         username = (
             text
@@ -1552,21 +1501,19 @@ async def text_handler(
             .lower()
         )
 
-        if not username:
-
-            await message.answer(
-                "❌ Username نامعتبر است."
-            )
-
-            return
-
-        if username == (
-            OWNER_USERNAME.lower()
-        ):
+        if username == OWNER_USERNAME.lower():
 
             await message.answer(
                 "❌ مالک را نمی‌توان "
                 "به‌عنوان ادمین اضافه کرد."
+            )
+
+            return
+
+        if not username:
+
+            await message.answer(
+                "❌ Username نامعتبر است."
             )
 
             return
@@ -1593,8 +1540,7 @@ async def text_handler(
         )
 
         await message.answer(
-            "✅ ادمین اضافه شد.\n\n"
-            f"👤 @{username}",
+            f"✅ ادمین @{username} اضافه شد.",
             reply_markup=(
                 owner_keyboard()
             ),
@@ -1602,15 +1548,15 @@ async def text_handler(
 
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # VOLUME
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get(
         "step"
     ) == "volume":
 
-        clean_text = (
+        clean = (
             text
             .replace("GB", "")
             .replace("gb", "")
@@ -1619,9 +1565,7 @@ async def text_handler(
 
         try:
 
-            volume = int(
-                clean_text
-            )
+            volume = int(clean)
 
             if volume <= 0:
                 raise ValueError
@@ -1631,8 +1575,7 @@ async def text_handler(
             await message.answer(
                 "❌ حجم نامعتبر است.\n\n"
                 "📦 حجم درخواستی را "
-                "انتخاب کنید یا عدد حجم "
-                "را وارد کنید:",
+                "انتخاب کنید یا وارد کنید:",
                 reply_markup=(
                     volume_keyboard()
                 ),
@@ -1649,8 +1592,7 @@ async def text_handler(
 
         await message.answer(
             "⏳ مدت اعتبار را "
-            "انتخاب کنید یا تعداد "
-            "روز را وارد کنید:",
+            "انتخاب کنید یا وارد کنید:",
             reply_markup=(
                 days_keyboard()
             ),
@@ -1658,15 +1600,15 @@ async def text_handler(
 
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # DAYS
-    # =====================================================
+    # -----------------------------------------------------
 
     if state.get(
         "step"
     ) == "days":
 
-        clean_text = (
+        clean = (
             text
             .replace("روز", "")
             .strip()
@@ -1674,9 +1616,7 @@ async def text_handler(
 
         try:
 
-            days = int(
-                clean_text
-            )
+            days = int(clean)
 
             if days <= 0:
                 raise ValueError
@@ -1686,8 +1626,7 @@ async def text_handler(
             await message.answer(
                 "❌ مدت اعتبار نامعتبر است.\n\n"
                 "⏳ مدت اعتبار را "
-                "انتخاب کنید یا تعداد "
-                "روز را وارد کنید:",
+                "انتخاب کنید یا وارد کنید:",
                 reply_markup=(
                     days_keyboard()
                 ),
@@ -1695,9 +1634,7 @@ async def text_handler(
 
             return
 
-        volume = state[
-            "volume"
-        ]
+        volume = state["volume"]
 
         USER_STATE.pop(
             user_id,
@@ -1709,8 +1646,6 @@ async def text_handler(
             volume,
             days,
         )
-
-        return
 
 
 # =========================================================
@@ -1738,10 +1673,6 @@ async def create_user(
             + secrets.token_hex(4)
         )
 
-        proxy_uuid = str(
-            uuid.uuid4()
-        )
-
         expire = int(
             time.time()
             + days * 86400
@@ -1754,36 +1685,123 @@ async def create_user(
             * 1024
         )
 
-        volume_text = (
-            f"{volume} GB"
+        # =================================================
+        # دریافت تمام Inbound ها
+        # =================================================
+
+        all_inbounds = (
+            await get_active_inbounds(
+                token
+            )
         )
 
+        inbound_map = (
+            build_inbound_map(
+                all_inbounds
+            )
+        )
+
+        if not inbound_map:
+
+            raise RuntimeError(
+                "هیچ Inbound فعالی در Marzban پیدا نشد."
+            )
+
+        logger.info(
+            "Detected protocols: "
+            f"{list(inbound_map.keys())}"
+        )
+
+        # =================================================
+        # PROXIES
+        # =================================================
+
+        proxies = {}
+
+        # VLESS
+        if "vless" in inbound_map:
+
+            proxies["vless"] = {
+                "id": str(
+                    uuid.uuid4()
+                )
+            }
+
+        # VMESS
+        if "vmess" in inbound_map:
+
+            proxies["vmess"] = {
+                "id": str(
+                    uuid.uuid4()
+                ),
+                "security": "auto"
+            }
+
+        # TROJAN
+        if "trojan" in inbound_map:
+
+            proxies["trojan"] = {
+                "password":
+                    secrets.token_urlsafe(16)
+            }
+
+        # SHADOWSOCKS
+        if "shadowsocks" in inbound_map:
+
+            proxies["shadowsocks"] = {
+                "password":
+                    secrets.token_urlsafe(16),
+                "method":
+                    "chacha20-ietf-poly1305"
+            }
+
+        if not proxies:
+
+            raise RuntimeError(
+                "هیچ پروتکل پشتیبانی‌شده‌ای "
+                "در Inbound ها پیدا نشد."
+            )
+
+        # =================================================
+        # INBOUNDS
+        # =================================================
+
+        inbounds = {}
+
+        for protocol, tags in inbound_map.items():
+
+            if protocol in proxies:
+
+                inbounds[
+                    protocol
+                ] = tags
+
+        # =================================================
+        # PAYLOAD
+        # =================================================
+
         payload = {
+            "username": username,
 
-            "username":
-                username,
+            "proxies": proxies,
 
-            "proxies": {
-                "vless": {
-                    "id":
-                        proxy_uuid
-                }
-            },
+            "inbounds": inbounds,
 
-            "inbounds": {},
+            "expire": expire,
 
-            "expire":
-                expire,
-
-            "data_limit":
-                data_limit,
+            "data_limit": data_limit,
 
             "data_limit_reset_strategy":
                 "no_reset",
 
-            "status":
-                "active",
+            "status": "active",
         }
+
+        logger.info(
+            "Creating user %s with protocols %s",
+            username,
+            list(proxies.keys()),
+        )
 
         response = await marzban_request(
             "POST",
@@ -1800,10 +1818,14 @@ async def create_user(
             raise RuntimeError(
                 "Create user failed: "
                 f"{response.status_code}\n"
-                f"{response.text[:2000]}"
+                f"{response.text[:3000]}"
             )
 
         result = response.json()
+
+        # =================================================
+        # SUB URL
+        # =================================================
 
         subscription_url = (
             result.get(
@@ -1825,9 +1847,17 @@ async def create_user(
                 "واقعی را برنگرداند."
             )
 
+        # =================================================
+        # QR
+        # =================================================
+
         qr_bytes = make_qr_code(
             subscription_url
         )
+
+        # =================================================
+        # SAVE
+        # =================================================
 
         creator = get_username(
             message.from_user
@@ -1853,12 +1883,16 @@ async def create_user(
         except Exception:
             pass
 
+        # =================================================
+        # RESULT
+        # =================================================
+
         caption = (
             "✅ کانفیگ ساخته شد\n\n"
             f"👤 نام کاربری:\n"
             f"{username}\n\n"
             f"📦 حجم:\n"
-            f"{volume_text}\n\n"
+            f"{volume} GB\n\n"
             f"⏳ اعتبار:\n"
             f"{days} روز\n\n"
             "🔗 لینک اشتراک:\n"
@@ -1868,8 +1902,7 @@ async def create_user(
         qr_file = BufferedInputFile(
             qr_bytes,
             filename=(
-                f"{username}"
-                "_subscription.png"
+                f"{username}_subscription.png"
             ),
         )
 
@@ -1904,24 +1937,21 @@ async def create_user(
                 "🔔 کانفیگ جدید\n\n"
                 f"👤 سازنده: @{creator}\n"
                 f"🧾 کاربر: {username}\n"
-                f"📦 حجم: {volume_text}\n"
+                f"📦 حجم: {volume} GB\n"
                 f"⏳ اعتبار: {days} روز"
             )
 
             try:
 
                 await bot.send_message(
-                    chat_id=
-                        owner_chat_id,
-                    text=
-                        owner_report,
+                    chat_id=owner_chat_id,
+                    text=owner_report,
                 )
 
-            except Exception as report_error:
+            except Exception as e:
 
                 logger.error(
-                    "Owner report failed: "
-                    f"{report_error}"
+                    f"Owner report failed: {e}"
                 )
 
     except Exception as error:
@@ -1938,7 +1968,7 @@ async def create_user(
         await message.answer(
             "❌ ساخت کانفیگ انجام نشد.\n\n"
             "خطا:\n"
-            f"{str(error)[:2500]}",
+            f"{str(error)[:3000]}",
             reply_markup=(
                 owner_keyboard()
                 if is_owner(
@@ -2002,11 +2032,6 @@ async def main():
         f"Owner: @{OWNER_USERNAME}"
     )
 
-    logger.info(
-        "Owner chat id: "
-        f"{DATA.get('owner_chat_id')}"
-    )
-
     scheduler = start_scheduler()
 
     try:
@@ -2024,10 +2049,6 @@ async def main():
             wait=False
         )
 
-
-# =========================================================
-# RUN
-# =========================================================
 
 if __name__ == "__main__":
 
