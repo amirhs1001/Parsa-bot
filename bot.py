@@ -43,10 +43,16 @@ MARZBAN_PASSWORD = os.getenv(
     ""
 ).strip()
 
+
+# =========================================================
+# OWNERS
+# =========================================================
+
 OWNER_USERNAMES = [
     "amirhszz",
     "parsa9599",
 ]
+
 
 SUB_URL = "https://panell.goat-hs.online/sub"
 
@@ -82,48 +88,76 @@ dp = Dispatcher()
 
 
 # =========================================================
-# LOCAL DATABASE
+# DATABASE
 # =========================================================
 
 DEFAULT_DATA = {
     "admins": [],
     "users": {},
     "states": {},
-    "owner_chat_id": None,
+    "owner_chat_ids": {},
 }
 
 
 def load_data():
+
     if not DATA_FILE.exists():
+
         return {
             "admins": [],
             "users": {},
             "states": {},
-            "owner_chat_id": None,
+            "owner_chat_ids": {},
         }
 
     try:
+
         with open(
             DATA_FILE,
             "r",
             encoding="utf-8",
         ) as f:
+
             data = json.load(f)
 
         for key, value in DEFAULT_DATA.items():
+
             if key not in data:
+
                 data[key] = value
+
+        # سازگاری با نسخه قدیمی
+        if (
+            "owner_chat_id" in data
+            and data.get("owner_chat_id")
+        ):
+
+            old_id = data["owner_chat_id"]
+
+            data.setdefault(
+                "owner_chat_ids",
+                {},
+            )
+
+            data["owner_chat_ids"][
+                "amirhszz"
+            ] = old_id
+
+            del data["owner_chat_id"]
 
         return data
 
     except Exception:
-        logger.exception("Database load failed")
+
+        logger.exception(
+            "Database load failed"
+        )
 
         return {
             "admins": [],
             "users": {},
             "states": {},
-            "owner_chat_id": None,
+            "owner_chat_ids": {},
         }
 
 
@@ -131,13 +165,17 @@ DATA = load_data()
 
 
 def save_data():
-    tmp = Path("bot_data.tmp")
+
+    tmp = Path(
+        "bot_data.tmp"
+    )
 
     with open(
         tmp,
         "w",
         encoding="utf-8",
     ) as f:
+
         json.dump(
             DATA,
             f,
@@ -145,7 +183,9 @@ def save_data():
             indent=2,
         )
 
-    tmp.replace(DATA_FILE)
+    tmp.replace(
+        DATA_FILE
+    )
 
 
 # =========================================================
@@ -153,27 +193,46 @@ def save_data():
 # =========================================================
 
 def clean_username(username):
+
     if not username:
         return ""
 
-    return username.replace("@", "").strip().lower()
+    return (
+        username
+        .replace("@", "")
+        .strip()
+        .lower()
+    )
 
 
 def get_username(user):
+
     return clean_username(
-        getattr(user, "username", None)
+        getattr(
+            user,
+            "username",
+            None,
+        )
     )
 
 
 def is_owner(user):
-    return (
-        get_username(user)
-        == OWNER_USERNAME
+
+    username = get_username(
+        user
     )
+
+    return username in [
+        clean_username(x)
+        for x in OWNER_USERNAMES
+    ]
 
 
 def is_admin(user):
-    username = get_username(user)
+
+    username = get_username(
+        user
+    )
 
     admins = [
         clean_username(x)
@@ -184,7 +243,7 @@ def is_admin(user):
     ]
 
     return (
-        username == OWNER_USERNAME
+        is_owner(user)
         or username in admins
     )
 
@@ -193,11 +252,16 @@ def set_state(
     user_id,
     state,
 ):
-    DATA["states"][str(user_id)] = state
+
+    DATA["states"][
+        str(user_id)
+    ] = state
+
     save_data()
 
 
 def get_state(user_id):
+
     return DATA.get(
         "states",
         {},
@@ -207,6 +271,7 @@ def get_state(user_id):
 
 
 def clear_state(user_id):
+
     DATA.get(
         "states",
         {},
@@ -490,28 +555,28 @@ async def create_marzban_user(
         * 1024
     )
 
-    # -----------------------------------------------------
-    # PROTOCOLS
-    # -----------------------------------------------------
-
     proxies = {
         "vless": {
-            "id": str(uuid.uuid4()),
+            "id": str(
+                uuid.uuid4()
+            ),
         },
 
         "trojan": {
-            "password": secrets.token_urlsafe(24),
+            "password": secrets.token_urlsafe(
+                24
+            ),
         },
 
         "shadowsocks": {
-            "method": "chacha20-ietf-poly1305",
-            "password": secrets.token_urlsafe(24),
+            "method":
+                "chacha20-ietf-poly1305",
+            "password":
+                secrets.token_urlsafe(
+                    24
+                ),
         },
     }
-
-    # -----------------------------------------------------
-    # EMPTY INBOUNDS = ALL INBOUNDS
-    # -----------------------------------------------------
 
     payload = {
         "username": username,
@@ -520,6 +585,8 @@ async def create_marzban_user(
         "data_limit": data_limit,
         "data_limit_reset_strategy": "no_reset",
         "proxies": proxies,
+
+        # خالی یعنی همه Inbound ها
         "inbounds": {},
     }
 
@@ -565,7 +632,9 @@ def get_subscription_link(
         or ""
     )
 
-    value = str(value).strip()
+    value = str(
+        value
+    ).strip()
 
     if not value:
 
@@ -584,13 +653,18 @@ def get_subscription_link(
 
         if "/sub/" in value:
 
-            token = value.split(
-                "/sub/",
-                1,
-            )[1].split(
-                "?",
-                1,
-            )[0].strip("/")
+            token = (
+                value
+                .split(
+                    "/sub/",
+                    1,
+                )[1]
+                .split(
+                    "?",
+                    1,
+                )[0]
+                .strip("/")
+            )
 
             return (
                 f"{SUB_URL}/{token}"
@@ -603,6 +677,7 @@ def get_subscription_link(
     if value.startswith(
         "sub/"
     ):
+
         value = value[4:]
 
     return (
@@ -611,7 +686,7 @@ def get_subscription_link(
 
 
 # =========================================================
-# QR CODE
+# QR
 # =========================================================
 
 def create_qr(text):
@@ -627,7 +702,9 @@ def create_qr(text):
     )
 
     qr.add_data(text)
-    qr.make(fit=True)
+    qr.make(
+        fit=True
+    )
 
     image = qr.make_image()
 
@@ -645,7 +722,9 @@ def create_qr(text):
 # START
 # =========================================================
 
-@dp.message(CommandStart())
+@dp.message(
+    CommandStart()
+)
 async def start(
     message: Message,
 ):
@@ -660,13 +739,22 @@ async def start(
 
         return
 
+    username = get_username(
+        message.from_user
+    )
+
     if is_owner(
         message.from_user
     ):
 
-        DATA["owner_chat_id"] = (
-            message.chat.id
+        DATA.setdefault(
+            "owner_chat_ids",
+            {},
         )
+
+        DATA["owner_chat_ids"][
+            username
+        ] = message.chat.id
 
         save_data()
 
@@ -723,7 +811,7 @@ async def back(
 
 
 # =========================================================
-# CREATE START
+# CREATE
 # =========================================================
 
 @dp.message(
@@ -750,10 +838,6 @@ async def create_start(
         reply_markup=volume_keyboard(),
     )
 
-
-# =========================================================
-# VOLUME BUTTONS
-# =========================================================
 
 @dp.message(
     F.text.in_(
@@ -801,10 +885,6 @@ async def volume_select(
         reply_markup=days_keyboard(),
     )
 
-
-# =========================================================
-# DAYS BUTTONS
-# =========================================================
 
 @dp.message(
     F.text.in_(
@@ -856,7 +936,7 @@ async def days_select(
 
 
 # =========================================================
-# DIRECT NUMBER INPUT
+# DIRECT NUMBER
 # =========================================================
 
 @dp.message(
@@ -890,10 +970,6 @@ async def numeric_input(
 
         return
 
-    # -----------------------------------------------------
-    # DIRECT VOLUME
-    # -----------------------------------------------------
-
     if state.get(
         "step"
     ) == "volume":
@@ -912,10 +988,6 @@ async def numeric_input(
         )
 
         return
-
-    # -----------------------------------------------------
-    # DIRECT DAYS
-    # -----------------------------------------------------
 
     if state.get(
         "step"
@@ -978,7 +1050,9 @@ async def build_config(
             [],
         )
 
-        DATA["users"][creator].append(
+        DATA["users"][
+            creator
+        ].append(
             username
         )
 
@@ -1015,39 +1089,39 @@ async def build_config(
             ),
         )
 
-        # -------------------------------------------------
-        # OWNER REPORT
-        # -------------------------------------------------
-
-        owner_chat_id = DATA.get(
-            "owner_chat_id"
+        # گزارش مختصر برای تمام مالک‌ها
+        report = (
+            "🔔 کانفیگ جدید\n"
+            f"👤 @{creator}\n"
+            f"📦 {volume}GB\n"
+            f"⏳ {days} روز"
         )
 
-        if (
-            owner_chat_id
-            and not is_owner(
-                message.from_user
-            )
+        for owner_username, chat_id in (
+            DATA.get(
+                "owner_chat_ids",
+                {},
+            ).items()
         ):
 
-            report = (
-                "🔔 کانفیگ جدید\n"
-                f"👤 @{creator}\n"
-                f"📦 {volume}GB\n"
-                f"⏳ {days} روز"
-            )
+            if (
+                owner_username
+                == creator
+            ):
+                continue
 
             try:
 
                 await bot.send_message(
-                    owner_chat_id,
+                    chat_id,
                     report,
                 )
 
             except Exception:
 
                 logger.exception(
-                    "Owner report failed"
+                    "Owner report failed for %s",
+                    owner_username,
                 )
 
     except Exception as e:
@@ -1075,7 +1149,7 @@ async def build_config(
 
 
 # =========================================================
-# CONFIG LIST
+# MY CONFIGS
 # =========================================================
 
 @dp.message(
@@ -1162,8 +1236,7 @@ async def configs(
             )
 
         text += (
-            "\nبرای حذف یک کانفیگ، "
-            "بنویسید:\n"
+            "\nبرای حذف یک کانفیگ:\n"
             "حذف username"
         )
 
@@ -1201,10 +1274,6 @@ async def admin_management(
     )
 
 
-# =========================================================
-# ADD ADMIN
-# =========================================================
-
 @dp.message(
     F.text == "➕ اضافه کردن ادمین"
 )
@@ -1228,10 +1297,6 @@ async def add_admin_start(
         "👤 Username ادمین را ارسال کنید."
     )
 
-
-# =========================================================
-# REMOVE ADMIN
-# =========================================================
 
 @dp.message(
     F.text == "🗑 حذف ادمین"
@@ -1282,10 +1347,6 @@ async def remove_admin_start(
     )
 
 
-# =========================================================
-# ADMIN LIST
-# =========================================================
-
 @dp.message(
     F.text == "📋 لیست ادمین‌ها"
 )
@@ -1326,156 +1387,13 @@ async def admin_list(
 
 
 # =========================================================
-# ADMIN TEXT STATES
-# =========================================================
-
-@dp.message(F.text)
-async def text_states(
-    message: Message,
-):
-
-    if not is_admin(
-        message.from_user
-    ):
-        return
-
-    state = get_state(
-        message.from_user.id
-    )
-
-    if not state:
-        return
-
-    step = state.get(
-        "step"
-    )
-
-    text = (
-        message.text or ""
-    ).strip()
-
-    # -----------------------------------------------------
-    # ADD ADMIN
-    # -----------------------------------------------------
-
-    if step == "add_admin":
-
-        username = clean_username(
-            text
-        )
-
-        if not username:
-
-            await message.answer(
-                "❌ Username معتبر نیست."
-            )
-
-            return
-
-        if username == OWNER_USERNAME:
-
-            await message.answer(
-                "❌ مالک را نمی‌توان اضافه کرد."
-            )
-
-            return
-
-        admins = [
-            clean_username(x)
-            for x in DATA.get(
-                "admins",
-                [],
-            )
-        ]
-
-        if username in admins:
-
-            clear_state(
-                message.from_user.id
-            )
-
-            await message.answer(
-                "⚠️ این کاربر از قبل ادمین است.",
-                reply_markup=admin_management_keyboard(),
-            )
-
-            return
-
-        DATA["admins"].append(
-            username
-        )
-
-        clear_state(
-            message.from_user.id
-        )
-
-        save_data()
-
-        await message.answer(
-            f"✅ @{username} اضافه شد.",
-            reply_markup=admin_management_keyboard(),
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # REMOVE ADMIN
-    # -----------------------------------------------------
-
-    if step == "remove_admin":
-
-        username = clean_username(
-            text
-        )
-
-        admins = DATA.get(
-            "admins",
-            [],
-        )
-
-        found = None
-
-        for admin in admins:
-
-            if clean_username(
-                admin
-            ) == username:
-
-                found = admin
-                break
-
-        if not found:
-
-            await message.answer(
-                "❌ این Username در لیست ادمین‌ها نیست."
-            )
-
-            return
-
-        DATA["admins"].remove(
-            found
-        )
-
-        clear_state(
-            message.from_user.id
-        )
-
-        save_data()
-
-        await message.answer(
-            f"✅ @{username} حذف شد.",
-            reply_markup=admin_management_keyboard(),
-        )
-
-        return
-
-
-# =========================================================
 # DELETE CONFIG
 # =========================================================
 
 @dp.message(
-    F.text.regexp(r"^حذف\s+.+$")
+    F.text.regexp(
+        r"^حذف\s+.+$"
+    )
 )
 async def delete_command(
     message: Message,
@@ -1486,10 +1404,14 @@ async def delete_command(
     ):
         return
 
-    username = message.text.split(
-        None,
-        1,
-    )[1].strip()
+    username = (
+        message.text
+        .split(
+            None,
+            1,
+        )[1]
+        .strip()
+    )
 
     await delete_user_by_name(
         message,
@@ -1532,7 +1454,8 @@ async def delete_user_by_name(
         not is_owner(
             message.from_user
         )
-        and owner_of_user != creator
+        and owner_of_user
+        != creator
     ):
 
         await message.answer(
@@ -1597,7 +1520,7 @@ async def delete_user_by_name(
 
 
 # =========================================================
-# BACKUP MENU
+# BACKUP
 # =========================================================
 
 @dp.message(
@@ -1618,10 +1541,6 @@ async def backup_menu(
     )
 
 
-# =========================================================
-# CREATE BACKUP
-# =========================================================
-
 def create_backup_file(
     prefix="backup",
 ):
@@ -1638,17 +1557,20 @@ def create_backup_file(
     )
 
     backup = {
-        "created_at": (
-            datetime.now().isoformat()
-        ),
-        "admins": DATA.get(
-            "admins",
-            [],
-        ),
-        "users": DATA.get(
-            "users",
-            {},
-        ),
+        "created_at":
+            datetime.now().isoformat(),
+
+        "admins":
+            DATA.get(
+                "admins",
+                [],
+            ),
+
+        "users":
+            DATA.get(
+                "users",
+                {},
+            ),
     }
 
     with open(
@@ -1666,10 +1588,6 @@ def create_backup_file(
 
     return path
 
-
-# =========================================================
-# DOWNLOAD BACKUP
-# =========================================================
 
 @dp.message(
     F.text == "📤 دریافت بک‌آپ"
@@ -1697,10 +1615,6 @@ async def download_backup(
     )
 
 
-# =========================================================
-# UPLOAD BACKUP
-# =========================================================
-
 @dp.message(
     F.text == "📥 آپلود بک‌آپ"
 )
@@ -1726,11 +1640,9 @@ async def upload_backup_start(
     )
 
 
-# =========================================================
-# BACKUP DOCUMENT
-# =========================================================
-
-@dp.message(F.document)
+@dp.message(
+    F.document
+)
 async def backup_document(
     message: Message,
 ):
@@ -1790,6 +1702,7 @@ async def backup_document(
             data,
             dict,
         ):
+
             raise ValueError
 
         admins = data.get(
@@ -1806,12 +1719,14 @@ async def backup_document(
             admins,
             list,
         ):
+
             raise ValueError
 
         if not isinstance(
             users,
             dict,
         ):
+
             raise ValueError
 
         DATA["admins"] = admins
@@ -1837,6 +1752,147 @@ async def backup_document(
         await message.answer(
             "❌ فایل بک‌آپ معتبر نیست."
         )
+
+
+# =========================================================
+# ADMIN TEXT STATES
+# =========================================================
+
+@dp.message(F.text)
+async def text_states(
+    message: Message,
+):
+
+    if not is_admin(
+        message.from_user
+    ):
+        return
+
+    state = get_state(
+        message.from_user.id
+    )
+
+    if not state:
+        return
+
+    step = state.get(
+        "step"
+    )
+
+    text = (
+        message.text or ""
+    ).strip()
+
+    if step == "add_admin":
+
+        username = clean_username(
+            text
+        )
+
+        if not username:
+
+            await message.answer(
+                "❌ Username معتبر نیست."
+            )
+
+            return
+
+        if username in [
+            clean_username(x)
+            for x in OWNER_USERNAMES
+        ]:
+
+            await message.answer(
+                "❌ این کاربر مالک است و نیازی به اضافه شدن به ادمین‌ها ندارد."
+            )
+
+            return
+
+        admins = [
+            clean_username(x)
+            for x in DATA.get(
+                "admins",
+                [],
+            )
+        ]
+
+        if username in admins:
+
+            clear_state(
+                message.from_user.id
+            )
+
+            await message.answer(
+                "⚠️ این کاربر از قبل ادمین است.",
+                reply_markup=admin_management_keyboard(),
+            )
+
+            return
+
+        DATA["admins"].append(
+            username
+        )
+
+        clear_state(
+            message.from_user.id
+        )
+
+        save_data()
+
+        await message.answer(
+            f"✅ @{username} اضافه شد.",
+            reply_markup=admin_management_keyboard(),
+        )
+
+        return
+
+    if step == "remove_admin":
+
+        username = clean_username(
+            text
+        )
+
+        admins = DATA.get(
+            "admins",
+            [],
+        )
+
+        found = None
+
+        for admin in admins:
+
+            if (
+                clean_username(admin)
+                == username
+            ):
+
+                found = admin
+                break
+
+        if not found:
+
+            await message.answer(
+                "❌ این Username در لیست ادمین‌ها نیست."
+            )
+
+            return
+
+        DATA["admins"].remove(
+            found
+        )
+
+        clear_state(
+            message.from_user.id
+        )
+
+        save_data()
+
+        await message.answer(
+            f"✅ @{username} حذف شد.",
+            reply_markup=admin_management_keyboard(),
+        )
+
+        return
 
 
 # =========================================================
@@ -1873,31 +1929,39 @@ async def nightly_backup():
                 prefix="auto_backup"
             )
 
-            owner_chat_id = DATA.get(
-                "owner_chat_id"
+            owner_chats = DATA.get(
+                "owner_chat_ids",
+                {},
             )
 
-            if owner_chat_id:
+            for owner_username, chat_id in (
+                owner_chats.items()
+            ):
 
-                document = BufferedInputFile(
-                    path.read_bytes(),
-                    filename=path.name,
-                )
+                try:
 
-                await bot.send_document(
-                    owner_chat_id,
-                    document=document,
-                    caption="🌙 بک‌آپ خودکار شبانه",
-                )
+                    document = BufferedInputFile(
+                        path.read_bytes(),
+                        filename=path.name,
+                    )
 
-                logger.info(
-                    "Nightly backup sent."
-                )
+                    await bot.send_document(
+                        chat_id,
+                        document=document,
+                        caption="🌙 بک‌آپ خودکار شبانه",
+                    )
+
+                except Exception:
+
+                    logger.exception(
+                        "Nightly backup failed for %s",
+                        owner_username,
+                    )
 
         except Exception:
 
             logger.exception(
-                "Nightly backup failed."
+                "Nightly backup creation failed"
             )
 
         await asyncio.sleep(5)
@@ -1945,7 +2009,9 @@ if __name__ == "__main__":
 
     try:
 
-        asyncio.run(main())
+        asyncio.run(
+            main()
+        )
 
     except KeyboardInterrupt:
 
