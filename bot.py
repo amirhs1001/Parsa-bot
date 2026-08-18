@@ -1256,34 +1256,26 @@ async def create_user(
         )
 
         # -------------------------------------------------
-        # NOTIFY OWNER
-        # -------------------------------------------------
+# NOTIFY OWNER - SHORT REPORT
+# -------------------------------------------------
 
-        if (
-            not is_owner(message.from_user)
-            and DATA.get("owner_chat_id")
-        ):
+if (
+    not is_owner(message.from_user)
+    and DATA.get("owner_chat_id")
+):
 
-            owner_caption = (
-                "🔔 کانفیگ جدید ساخته شد\n\n"
-                f"👤 سازنده:\n"
-                f"@{creator}\n\n"
-                f"🧾 نام کاربری:\n"
-                f"{username}\n\n"
-                f"📦 حجم:\n"
-                f"{volume_text}\n\n"
-                f"⏳ اعتبار:\n"
-                f"{days} روز\n\n"
-                "🔗 لینک اشتراک:\n"
-                f"{subscription_url}"
-            )
+    owner_report = (
+        "🔔 کانفیگ جدید ساخته شد\n\n"
+        f"👤 سازنده: @{creator}\n"
+        f"🧾 کاربر: {username}\n"
+        f"📦 حجم: {volume_text}\n"
+        f"⏳ اعتبار: {days} روز"
+    )
 
-            owner_qr = BufferedInputFile(
-                qr_bytes,
-                filename=(
-                    f"{username}_subscription.png"
-                ),
-            )
+    await bot.send_message(
+        chat_id=DATA["owner_chat_id"],
+        text=owner_report,
+    )
 
             await bot.send_photo(
                 chat_id=DATA["owner_chat_id"],
