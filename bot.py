@@ -43,7 +43,7 @@ MARZBAN_PASSWORD = os.getenv(
     ""
 ).strip()
 
-OWNER_USERNAME = "amirhszz"
+OWNER_USERNAME = "parsa9599"
 
 SUB_URL = "https://panell.goat-hs.online/sub"
 
