@@ -123,7 +123,6 @@ def load_data():
         for key, value in DEFAULT_DATA.items():
 
             if key not in data:
-
                 data[key] = value
 
         # سازگاری با نسخه قدیمی
@@ -166,9 +165,7 @@ DATA = load_data()
 
 def save_data():
 
-    tmp = Path(
-        "bot_data.tmp"
-    )
+    tmp = Path("bot_data.tmp")
 
     with open(
         tmp,
@@ -183,9 +180,7 @@ def save_data():
             indent=2,
         )
 
-    tmp.replace(
-        DATA_FILE
-    )
+    tmp.replace(DATA_FILE)
 
 
 # =========================================================
@@ -218,9 +213,7 @@ def get_username(user):
 
 def is_owner(user):
 
-    username = get_username(
-        user
-    )
+    username = get_username(user)
 
     return username in [
         clean_username(x)
@@ -230,9 +223,7 @@ def is_owner(user):
 
 def is_admin(user):
 
-    username = get_username(
-        user
-    )
+    username = get_username(user)
 
     admins = [
         clean_username(x)
@@ -615,9 +606,7 @@ async def create_marzban_user(
 # SUBSCRIPTION
 # =========================================================
 
-def get_subscription_link(
-    result,
-):
+def get_subscription_link(result):
 
     value = (
         result.get(
@@ -702,6 +691,7 @@ def create_qr(text):
     )
 
     qr.add_data(text)
+
     qr.make(
         fit=True
     )
