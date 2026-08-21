@@ -54,7 +54,7 @@ OWNER_USERNAMES = [
 ]
 
 
-SUB_URL = "https://panell.goat-hs.online/sub"
+SUB_URL = "https://parsa.goat-hs.online/sub"
 
 DATA_FILE = Path("bot_data.json")
 BACKUP_DIR = Path("backups")
