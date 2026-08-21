@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -19,6 +20,9 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     BufferedInputFile,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
 )
 
 
@@ -626,6 +630,7 @@ def get_subscription_link(result):
     ).strip()
 
     if not value:
+
         raise RuntimeError(
             "لینک Subscription توسط Marzban برگردانده نشد."
         )
@@ -646,6 +651,7 @@ def get_subscription_link(result):
         )
 
         if not token:
+
             raise RuntimeError(
                 "توکن Subscription معتبر نیست."
             )
@@ -659,11 +665,13 @@ def get_subscription_link(result):
     if value.startswith(
         "sub/"
     ):
+
         value = value[4:]
 
     return (
         f"{SUB_URL}/{value}"
     )
+
 
 # =========================================================
 # QR
@@ -697,6 +705,192 @@ def create_qr(text):
     )
 
     return buffer.getvalue()
+
+
+# =========================================================
+# MANUAL CONFIGS
+# =========================================================
+
+async def get_subscription_configs(
+    subscription_url,
+):
+
+    async with httpx.AsyncClient(
+        timeout=60,
+        follow_redirects=True,
+    ) as client:
+
+        response = await client.get(
+            subscription_url
+        )
+
+    if response.status_code != 200:
+
+        raise RuntimeError(
+            "دریافت Subscription ناموفق بود: "
+            f"{response.status_code}"
+        )
+
+    content = response.text.strip()
+
+    if not content:
+
+        raise RuntimeError(
+            "Subscription خالی است."
+        )
+
+    # تلاش برای Decode کردن Base64
+    try:
+
+        padding = "=" * (
+            (-len(content)) % 4
+        )
+
+        decoded = base64.b64decode(
+            content + padding
+        ).decode(
+            "utf-8",
+            errors="ignore",
+        )
+
+    except Exception:
+
+        decoded = content
+
+    configs = [
+        line.strip()
+        for line in decoded.splitlines()
+        if line.strip()
+        and (
+            line.startswith("vless://")
+            or line.startswith("vmess://")
+            or line.startswith("trojan://")
+            or line.startswith("ss://")
+        )
+    ]
+
+    if not configs:
+
+        raise RuntimeError(
+            "هیچ کانفیگی داخل Subscription پیدا نشد."
+        )
+
+    return configs
+
+
+def manual_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📥 دریافت دستی",
+                    callback_data="manual_configs",
+                )
+            ]
+        ]
+    )
+
+
+@dp.callback_query(
+    F.data == "manual_configs"
+)
+async def manual_configs(
+    callback: CallbackQuery,
+):
+
+    if not is_admin(
+        callback.from_user
+    ):
+
+        await callback.answer(
+            "❌ دسترسی ندارید.",
+            show_alert=True,
+        )
+
+        return
+
+    await callback.answer()
+
+    message = callback.message
+
+    await message.answer(
+        "⏳ در حال دریافت همه کانفیگ‌ها..."
+    )
+
+    try:
+
+        # لینک Subscription از کپشن پیام QR پیدا می‌شود
+        text = (
+            message.caption
+            or ""
+        )
+
+        subscription = ""
+
+        for line in text.splitlines():
+
+            line = line.strip()
+
+            if (
+                line.startswith("https://")
+                and "/sub/" in line
+            ):
+
+                subscription = line
+
+                break
+
+        if not subscription:
+
+            raise RuntimeError(
+                "لینک Subscription پیدا نشد."
+            )
+
+        configs = (
+            await get_subscription_configs(
+                subscription
+            )
+        )
+
+        await message.answer(
+            f"📦 تعداد کانفیگ‌ها: {len(configs)}\n"
+            "📤 در حال ارسال QRها..."
+        )
+
+        for index, config in enumerate(
+            configs,
+            start=1,
+        ):
+
+            qr = create_qr(
+                config
+            )
+
+            photo = BufferedInputFile(
+                qr,
+                filename=(
+                    f"config_{index}.png"
+                ),
+            )
+
+            await message.answer_photo(
+                photo=photo,
+                caption=(
+                    f"📡 کانفیگ {index}"
+                ),
+            )
+
+    except Exception as e:
+
+        logger.exception(
+            "Manual configs failed"
+        )
+
+        await message.answer(
+            "❌ دریافت کانفیگ‌ها انجام نشد.\n\n"
+            f"{str(e)[:2000]}"
+        )
 
 
 # =========================================================
@@ -1040,8 +1234,11 @@ async def build_config(
         save_data()
 
         try:
+
             await status_message.delete()
+
         except Exception:
+
             pass
 
         caption = (
@@ -1058,16 +1255,11 @@ async def build_config(
             filename=f"{username}.png",
         )
 
+        # Subscription + دکمه دریافت دستی
         await message.answer_photo(
             photo=photo,
             caption=caption,
-            reply_markup=(
-                owner_keyboard()
-                if is_owner(
-                    message.from_user
-                )
-                else admin_keyboard()
-            ),
+            reply_markup=manual_keyboard(),
         )
 
         # گزارش مختصر برای تمام مالک‌ها
@@ -1112,8 +1304,11 @@ async def build_config(
         )
 
         try:
+
             await status_message.delete()
+
         except Exception:
+
             pass
 
         await message.answer(
