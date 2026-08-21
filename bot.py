@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 MARZBAN_URL = os.getenv(
     "MARZBAN_URL",
-    "https://panell.goat-hs.online"
+    "https://parsa.goat-hs.online"
 ).rstrip("/")
 
 MARZBAN_USERNAME = os.getenv(
