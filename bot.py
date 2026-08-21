@@ -626,53 +626,44 @@ def get_subscription_link(result):
     ).strip()
 
     if not value:
-
         raise RuntimeError(
             "لینک Subscription توسط Marzban برگردانده نشد."
         )
 
-    if (
-        value.startswith(
-            "http://"
-        )
-        or value.startswith(
-            "https://"
-        )
-    ):
+    if "/sub/" in value:
 
-        if "/sub/" in value:
+        token = (
+            value
+            .split(
+                "/sub/",
+                1,
+            )[1]
+            .split(
+                "?",
+                1,
+            )[0]
+            .strip("/")
+        )
 
-            token = (
-                value
-                .split(
-                    "/sub/",
-                    1,
-                )[1]
-                .split(
-                    "?",
-                    1,
-                )[0]
-                .strip("/")
+        if not token:
+            raise RuntimeError(
+                "توکن Subscription معتبر نیست."
             )
 
-            return (
-                f"{SUB_URL}/{token}"
-            )
-
-        return value
+        return (
+            f"{SUB_URL}/{token}"
+        )
 
     value = value.strip("/")
 
     if value.startswith(
         "sub/"
     ):
-
         value = value[4:]
 
     return (
         f"{SUB_URL}/{value}"
     )
-
 
 # =========================================================
 # QR
